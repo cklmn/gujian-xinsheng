@@ -1,0 +1,2587 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>古建新生 · 一座重檐六角亭的七层拆装</title>
+<meta name="description" content="以一座重檐六角亭为原型，用 Three.js 程序化几何体拼装的交互式拆装阅读：点击构件拆装，逐层分解，线框与实体连续过渡。">
+<script>if (new URLSearchParams(location.search).has("static")) document.documentElement.classList.add("static");</script>
+<style>
+:root {
+  --paper: #f3efe5;
+  --paper-deep: #e9e3d4;
+  --ink: #26241f;
+  --ink-60: rgba(38, 36, 31, 0.60);
+  --ink-45: rgba(38, 36, 31, 0.45);
+  --ink-30: rgba(38, 36, 31, 0.30);
+  --line: rgba(38, 36, 31, 0.16);
+  --red: #a8402f;
+  --wood: #8a5b3c;
+  --serif: "Songti SC", "STSong", "SimSun", "Noto Serif SC", serif;
+  --sans: "PingFang SC", "Microsoft YaHei", "Heiti SC", "SimHei", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* 纸面质感 */
+.paper-grain {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0.55;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='240' height='240' filter='url(%23n)' opacity='0.16'/></svg>");
+}
+
+.vignette {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  background: radial-gradient(120% 90% at 52% 42%, rgba(255, 253, 246, 0.55) 0%, rgba(255, 253, 246, 0) 46%, rgba(120, 104, 78, 0.07) 100%);
+}
+
+/* ───────── 页眉 */
+.masthead {
+  position: fixed;
+  left: 56px;
+  top: 50px;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.34em;
+  color: var(--ink-45);
+  margin-bottom: 16px;
+}
+
+.masthead h1 {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 40px;
+  letter-spacing: 0.30em;
+  line-height: 1;
+  margin: 0 0 14px -0.02em;
+  color: var(--ink);
+}
+
+.masthead .rule {
+  width: 46px;
+  height: 1px;
+  background: var(--red);
+  margin: 0 0 14px;
+  opacity: 0.85;
+}
+
+.masthead .sub {
+  font-size: 13px;
+  letter-spacing: 0.10em;
+  color: rgba(38, 36, 31, 0.72);
+  margin: 0 0 8px;
+}
+
+.masthead .sub2 {
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  color: var(--ink-45);
+  margin: 0;
+}
+
+/* ───────── 右上信息 */
+.meta {
+  position: fixed;
+  right: 56px;
+  top: 54px;
+  z-index: 6;
+  text-align: right;
+  font-size: 10px;
+  line-height: 2.1;
+  letter-spacing: 0.16em;
+  color: var(--ink-45);
+  pointer-events: none;
+}
+.meta b {
+  font-weight: 400;
+  color: rgba(38, 36, 31, 0.68);
+}
+
+/* ───────── 信息面板 */
+.panel {
+  position: fixed;
+  right: 56px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 302px;
+  z-index: 7;
+  padding: 22px 24px 18px;
+  background: rgba(248, 244, 234, 0.80);
+  border: 1px solid rgba(38, 36, 31, 0.14);
+  box-shadow: 0 24px 60px rgba(64, 52, 34, 0.07);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+}
+
+.p-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+.p-idx {
+  font-family: var(--serif);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  color: var(--red);
+}
+.p-tag {
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  color: var(--ink-45);
+}
+
+.p-title {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 24px;
+  letter-spacing: 0.10em;
+  margin: 0 0 14px;
+}
+
+.p-rule {
+  height: 1px;
+  background: var(--line);
+  margin-bottom: 14px;
+}
+
+.p-note {
+  font-size: 12.5px;
+  line-height: 2.0;
+  letter-spacing: 0.02em;
+  color: rgba(38, 36, 31, 0.78);
+  margin: 0 0 16px;
+  text-align: justify;
+}
+
+.p-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  color: var(--ink-30);
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 12px;
+}
+
+.p-index {
+  display: flex;
+  gap: 4px;
+}
+.p-index button {
+  flex: 1;
+  border: 1px solid var(--line);
+  background: transparent;
+  font-family: var(--serif);
+  font-size: 10px;
+  color: var(--ink-45);
+  padding: 5px 0 4px;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+.p-index button:hover { border-color: var(--ink-30); color: var(--ink); }
+.p-index button.on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+
+.p-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+  margin-bottom: 12px;
+}
+.p-list .row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 2px;
+  border: 0;
+  border-bottom: 1px solid rgba(38, 36, 31, 0.09);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: var(--ink);
+  transition: background 0.18s, padding 0.18s;
+}
+.p-list .row:hover { background: rgba(38, 36, 31, 0.045); padding-left: 6px; }
+.p-list .row-k {
+  font-family: var(--serif);
+  font-size: 9.5px;
+  color: var(--red);
+  width: 18px;
+  letter-spacing: 0.05em;
+}
+.p-list .row-n {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  flex: 1;
+}
+.p-list .row-a {
+  font-size: 9px;
+  color: var(--ink-30);
+  letter-spacing: 0.04em;
+}
+
+.p-hint {
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  color: var(--ink-30);
+}
+
+/* ───────── 底栏 */
+.toolbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 88px;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 34px;
+  padding: 0 56px;
+  background: linear-gradient(to top, rgba(243, 239, 229, 0.96) 30%, rgba(243, 239, 229, 0.78));
+  border-top: 1px solid var(--line);
+  backdrop-filter: blur(6px);
+}
+
+.chips {
+  display: flex;
+  gap: 0;
+  flex: 0 0 auto;
+}
+.chip {
+  width: 74px;
+  padding: 7px 0 6px;
+  border: 0;
+  border-left: 1px solid rgba(38, 36, 31, 0.10);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink-45);
+  transition: color 0.18s;
+}
+.chip:first-child { border-left: 0; padding-left: 2px; }
+.chip-k {
+  display: block;
+  font-family: var(--serif);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  margin-bottom: 4px;
+  opacity: 0.7;
+}
+.chip-n {
+  display: block;
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+}
+.chip:hover { color: var(--ink); }
+.chip.on { color: var(--ink); }
+.chip.on .chip-k { color: var(--red); opacity: 1; }
+.chip.up .chip-n { text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1px; text-decoration-color: rgba(168, 64, 47, 0.5); }
+
+.acts {
+  display: flex;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+.btn {
+  font-family: var(--sans);
+  font-size: 11.5px;
+  letter-spacing: 0.18em;
+  padding: 10px 20px 9px;
+  background: transparent;
+  border: 1px solid rgba(38, 36, 31, 0.32);
+  color: var(--ink);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn:hover { background: rgba(38, 36, 31, 0.9); border-color: rgba(38, 36, 31, 0.9); color: var(--paper); }
+.btn.primary { background: var(--red); border-color: var(--red); color: #fbf5ea; }
+.btn.primary:hover { background: #8f3325; border-color: #8f3325; }
+
+.slider {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 0 0 auto;
+}
+.s-lab {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--ink-45);
+}
+#slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 210px;
+  height: 16px;
+  background: transparent;
+  cursor: pointer;
+}
+#slider::-webkit-slider-runnable-track {
+  height: 1px;
+  background: rgba(38, 36, 31, 0.34);
+}
+#slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 11px;
+  height: 11px;
+  margin-top: -5px;
+  background: var(--ink);
+  border-radius: 0;
+  box-shadow: 0 0 0 3px var(--paper);
+}
+#slider::-moz-range-track { height: 1px; background: rgba(38, 36, 31, 0.34); }
+#slider::-moz-range-thumb { width: 10px; height: 10px; background: var(--ink); border: 0; border-radius: 0; }
+
+/* ───────── 层级标注 */
+.labels {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.7s ease;
+}
+.labels.on { opacity: 1; }
+.lbl {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+.lbl-k {
+  font-family: var(--serif);
+  font-size: 9px;
+  letter-spacing: 0.10em;
+  color: var(--red);
+}
+.lbl-n {
+  font-family: var(--serif);
+  font-size: 13px;
+  letter-spacing: 0.10em;
+  color: rgba(38, 36, 31, 0.85);
+}
+#leaders {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 4;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.7s ease;
+}
+#leaders line {
+  stroke: rgba(38, 36, 31, 0.42);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+#leaders path {
+  fill: none;
+  stroke: rgba(38, 36, 31, 0.46);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+#leaders circle.dot { fill: rgba(38, 36, 31, 0.5); }
+#leaders line.axis {
+  stroke: rgba(38, 36, 31, 0.20);
+  stroke-dasharray: 1 7;
+}
+
+/* ───────── 载入 */
+.boot {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--paper);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 14px;
+  transition: opacity 0.9s ease 0.15s, visibility 0.9s;
+}
+.boot .b-t {
+  font-family: var(--serif);
+  font-size: 22px;
+  letter-spacing: 0.5em;
+  margin-left: 0.5em;
+}
+.boot .b-s {
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  color: var(--ink-45);
+}
+.boot .b-line {
+  width: 120px;
+  height: 1px;
+  background: rgba(38, 36, 31, 0.15);
+  overflow: hidden;
+  margin-top: 6px;
+}
+.boot .b-line i {
+  display: block;
+  width: 40%;
+  height: 100%;
+  background: var(--red);
+  animation: slide 1.4s ease-in-out infinite;
+}
+@keyframes slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+body.is-ready .boot { opacity: 0; visibility: hidden; }
+html.static .boot { display: none !important; }
+html.static .labels, html.static #leaders { transition: none; }
+
+/* 拆解态：页眉略退 */
+body.is-exploded .masthead { opacity: 0.9; }
+
+/* 小屏适配 */
+@media (max-width: 1280px) {
+  .masthead { left: 32px; top: 32px; }
+  .masthead h1 { font-size: 30px; }
+  .meta { right: 32px; top: 34px; }
+  .panel { right: 32px; width: 270px; }
+  .toolbar { padding: 0 32px; gap: 20px; height: 80px; }
+  .chip { width: 58px; }
+  #slider { width: 140px; }
+}
+
+/* ── 悬停说明浮层 ───────────────────────── */
+.tip{
+  position:fixed; left:0; top:0; z-index:40; width:302px;
+  padding:14px 16px 13px;
+  background:rgba(250,247,239,.975);
+  border:1px solid rgba(42,39,36,.12);
+  box-shadow:0 16px 36px rgba(70,58,45,.13);
+  opacity:0; visibility:hidden; pointer-events:none;
+  transition:opacity .15s ease;
+  will-change:transform;
+}
+.tip.on{opacity:1; visibility:visible;}
+.tip-head{display:flex; align-items:baseline; gap:9px; padding-bottom:9px;
+  border-bottom:1px solid rgba(42,39,36,.10);}
+.tip-k{font:600 9.5px/1 "Microsoft YaHei","PingFang SC",sans-serif;
+  letter-spacing:.22em; color:#a8402f;}
+.tip-l{font-family:"Songti SC",SimSun,"STSong",serif; font-size:17px;
+  letter-spacing:.08em; color:#2a2724;}
+.tip-d{margin:10px 0 0; font:400 11.5px/1.95 "Microsoft YaHei","PingFang SC",sans-serif;
+  color:#57514a; letter-spacing:.015em; text-align:justify;}
+.tip-hint{display:block; margin-top:11px; font:400 9.5px/1 "Microsoft YaHei","PingFang SC",sans-serif;
+  letter-spacing:.16em; color:#a8402f; opacity:.82;}
+
+/* ───────────────────────── 仪器层：细线、编号、微标签 */
+.frame {
+  position: fixed; inset: 16px; z-index: 5; pointer-events: none;
+  border: 1px solid rgba(38, 36, 31, 0.10);
+}
+.frame i { position: absolute; width: 9px; height: 9px; border: 0 solid rgba(38, 36, 31, 0.42); }
+.frame i:nth-child(1) { left: -1px; top: -1px; border-left-width: 1px; border-top-width: 1px; }
+.frame i:nth-child(2) { right: -1px; top: -1px; border-right-width: 1px; border-top-width: 1px; }
+.frame i:nth-child(3) { left: -1px; bottom: -1px; border-left-width: 1px; border-bottom-width: 1px; }
+.frame i:nth-child(4) { right: -1px; bottom: -1px; border-right-width: 1px; border-bottom-width: 1px; }
+
+.micro {
+  margin: 0; font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--ink-45); font-weight: 400; white-space: nowrap;
+}
+.micro i { font-style: normal; margin: 0 0.42em; color: var(--ink-30); }
+.micro b, .micro span { font-variant-numeric: tabular-nums; letter-spacing: 0.12em; }
+.micro b { color: var(--ink); font-weight: 600; }
+.micro em { font-style: normal; color: var(--ink-60); letter-spacing: 0.16em; margin-left: 0.5em; }
+
+.masthead .brand-en {
+  margin: 14px 0 0; font-size: 10px; letter-spacing: 0.2em; color: var(--ink-45);
+  text-transform: uppercase;
+}
+.masthead .brand-en i { font-style: normal; margin: 0 0.6em; color: var(--ink-30); }
+.masthead .eyebrow { margin-bottom: 14px; }
+
+.meta { text-align: right; }
+.meta .micro { margin-bottom: 10px; }
+.meta div { display: block; margin-top: 6px; }
+.meta div span {
+  display: block; font-size: 9px; letter-spacing: 0.18em; color: var(--ink-30);
+  margin-top: 3px; text-transform: uppercase;
+}
+
+/* 底栏：层 / 操作 / 机位 / 渲染 */
+.toolbar {
+  height: auto; min-height: 108px; padding: 18px 56px 14px;
+  display: grid; grid-template-columns: minmax(360px, 1.25fr) auto 168px 236px;
+  align-items: end; gap: 34px;
+}
+.toolbar .col { display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.toolbar .chips { gap: 0; }
+.toolbar .acts { gap: 9px; }
+.btn { position: relative; padding-right: 34px; }
+.btn kbd {
+  position: absolute; right: 9px; top: 50%; transform: translateY(-50%);
+  font-size: 9px; letter-spacing: 0; color: var(--ink-30); border-color: transparent;
+}
+.btn.primary kbd { color: rgba(255, 255, 255, 0.62); }
+
+.vseg { display: flex; gap: 6px; }
+.vseg button {
+  appearance: none; border: 1px solid var(--line); background: transparent;
+  width: 32px; height: 26px; color: var(--ink-45); cursor: pointer;
+  font-family: var(--serif); font-size: 12px; line-height: 1; padding: 0;
+  transition: all 0.24s ease;
+}
+.vseg button:hover { border-color: var(--ink-30); color: var(--ink); }
+.vseg button.on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+
+/* HUD */
+.hud {
+  position: fixed; left: 56px; right: 56px; bottom: 22px; z-index: 6;
+  display: flex; align-items: center; justify-content: space-between; gap: 24px;
+  font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-30);
+  pointer-events: none;
+}
+.hud p { margin: 0; display: flex; align-items: center; gap: 10px; }
+.hud i { font-style: normal; color: rgba(38, 36, 31, 0.22); margin: 0 0.5em; }
+.hud .live {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--red);
+  box-shadow: 0 0 0 3px rgba(168, 64, 47, 0.12);
+}
+.hud-c { gap: 18px; }
+.kg { display: inline-flex; align-items: center; gap: 4px; }
+.kg em { font-style: normal; margin-left: 3px; color: var(--ink-45); letter-spacing: 0.14em; }
+kbd {
+  font-family: var(--sans); font-size: 9px; line-height: 1;
+  padding: 3px 4px 2px; min-width: 15px; text-align: center;
+  border: 1px solid var(--line); border-radius: 1px; color: var(--ink-60);
+  letter-spacing: 0.04em;
+}
+body.is-wire .hud .live { background: var(--ink); box-shadow: none; }
+
+/* 底栏布局修正：四列不溢出，HUD 落到最下一行 */
+.toolbar {
+  bottom: 40px; padding: 16px 56px 12px;
+  grid-template-columns: minmax(0, 1fr) auto auto 252px; gap: 30px;
+}
+.toolbar .slider { margin-left: 0; flex: 1 1 auto; width: 100%; min-width: 0; gap: 10px; }
+.toolbar .slider input[type="range"] { flex: 1 1 auto; width: auto; min-width: 0; }
+.hud { bottom: 13px; }
+.toolbar { grid-template-columns: minmax(0, 1fr) auto auto 300px; gap: 26px; }
+.toolbar #slider { width: auto; flex: 1 1 auto; min-width: 0; }
+.hud { bottom: 21px; }
+
+/* 构件档案卡 */
+.p-spec { margin: 13px 0 12px; border-top: 1px solid rgba(38, 36, 31, 0.14); }
+.p-spec div {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 14px;
+  padding: 5.5px 0; border-bottom: 1px solid rgba(38, 36, 31, 0.075);
+}
+.p-spec span:first-child {
+  font-size: 9.5px; letter-spacing: 0.16em; color: rgba(38, 36, 31, 0.5);
+  font-family: var(--hei); white-space: nowrap;
+}
+.p-spec span:last-child {
+  font-size: 11.5px; letter-spacing: 0.02em; color: #2a2721;
+  font-family: var(--hei); text-align: right;
+}
+
+.p-en {
+  margin-top: 5px; font-family: var(--hei); font-size: 8.6px;
+  letter-spacing: 0.24em; color: rgba(38, 36, 31, 0.42); text-transform: uppercase;
+}
+.panel::before, .panel::after {
+  content: ''; position: absolute; width: 9px; height: 9px;
+  border: 1px solid rgba(38, 36, 31, 0.35);
+}
+.panel::before { top: 7px; left: 7px; border-right: 0; border-bottom: 0; }
+.panel::after { bottom: 7px; right: 7px; border-left: 0; border-top: 0; }
+
+.panel { top: 258px; transform: none; }
+
+.btn.on { background: #26241f; color: #f4efe3; border-color: #26241f; }
+.btn.on kbd { color: rgba(244, 239, 227, 0.7); border-color: rgba(244, 239, 227, 0.3); }
+
+
+/* ═══════ 传统语汇覆盖：界格 / 双线 / 朱印 / 宋楷 ═══════ */
+body{ font-family:"SimHei","PingFang SC","Microsoft YaHei",sans-serif; }
+
+/* 标题与眉题 */
+.masthead .eyebrow{
+  font-family:"KaiTi","STKaiti","SimSun",serif;
+  font-size:12.5px; letter-spacing:.34em; color:rgba(38,36,31,.62);
+}
+.masthead .eyebrow i{ font-style:normal; margin:0 .5em; color:#a8402f; }
+.masthead h1{
+  font-family:"SimSun","STSong",serif; font-weight:400;
+  letter-spacing:.16em; display:flex; align-items:flex-start; gap:16px;
+}
+.masthead h1 .seal{
+  font-family:"KaiTi","STKaiti",serif; font-size:15px; letter-spacing:.22em;
+  writing-mode:vertical-rl; text-orientation:upright;
+  color:#f6f1e4; background:#a8402f; padding:11px 6px;
+  line-height:1.1; margin-top:2px; border-radius:1px;
+  box-shadow:0 0 0 1px #a8402f, 0 0 0 3px rgba(168,64,47,.16);
+  box-shadow:0 1px 0 rgba(0,0,0,.08);
+}
+.masthead .brand-note{
+  font-family:"KaiTi","STKaiti","SimSun",serif;
+  font-size:13px; letter-spacing:.14em; color:rgba(38,36,31,.50); margin-top:10px;
+}
+.masthead .rule{ background:linear-gradient(to right,rgba(38,36,31,.55),rgba(38,36,31,.14) 42%,transparent); }
+
+/* 建筑档案：竖排小表 */
+.meta{ text-align:right; }
+.meta .meta-h{
+  font-family:"SimSun",serif; font-size:13px; letter-spacing:.42em;
+  color:rgba(38,36,31,.72); margin:0 0 12px;
+  padding-bottom:9px; border-bottom:1px solid rgba(38,36,31,.20);
+}
+.meta dl{ margin:0; display:grid; gap:7px; }
+.meta dl > div{ display:grid; grid-template-columns:38px auto; gap:14px; align-items:baseline; justify-content:end; }
+.meta dt{
+  font-family:"KaiTi","STKaiti",serif; font-size:11.5px; letter-spacing:.2em;
+  color:rgba(38,36,31,.40);
+}
+.meta dd{ margin:0; font-size:12px; letter-spacing:.08em; color:rgba(38,36,31,.82); }
+
+/* 界格：四栏之间加竖线 */
+.toolbar{ align-items:flex-start; }
+.toolbar .col{ border-left:1px solid rgba(38,36,31,.13); padding-left:22px; }
+.toolbar .col:first-child{ border-left:0; padding-left:0; }
+.col-h{
+  margin:0 0 12px; font-family:"SimSun",serif; font-size:11.5px;
+  letter-spacing:.30em; color:rgba(38,36,31,.66); display:flex; align-items:baseline; gap:10px;
+}
+.col-h::before{
+  content:""; width:5px; height:5px; background:#a8402f; display:inline-block;
+  transform:translateY(-2px); margin-right:-2px;
+}
+.col-h i{ font-style:normal; font-family:"SimSun",serif; color:#26241f; letter-spacing:.1em; }
+.col-h em{ font-style:normal; font-family:"KaiTi",serif; font-size:11.5px; color:rgba(38,36,31,.45); letter-spacing:.16em; }
+
+/* 构件索引：汉字编号 + 名 */
+.chips{ display:flex; gap:2px; justify-content:flex-start; flex-wrap:nowrap; }
+.chip{
+  border:0; background:none; padding:4px 9px 5px; cursor:pointer;
+  display:flex; flex-direction:column; align-items:center; gap:3px;
+  border-top:1px solid transparent; transition:border-color .2s, color .2s;
+}
+.chip-k{ font-family:"SimSun",serif; font-size:9.5px; letter-spacing:.10em; color:rgba(38,36,31,.58); }
+.chip-n{ font-family:"SimHei",sans-serif; font-size:12px; letter-spacing:.10em; color:rgba(38,36,31,.82); }
+.chip:hover .chip-n{ color:#a8402f; }
+.chip.on{ border-top-color:#a8402f; }
+.chip.on .chip-k{ color:#a8402f; }
+.chip.on .chip-n{ color:#26241f; }
+
+/* 按钮：描边方框，主操作朱红 */
+.btn{
+  font-family:"SimHei",sans-serif; font-size:12px; letter-spacing:.18em;
+  padding:9px 17px; border:1px solid rgba(38,36,31,.55); background:transparent;
+  color:#26241f; border-radius:0; cursor:pointer; transition:.2s;
+}
+.btn:hover{ border-color:#a8402f; color:#a8402f; }
+.btn kbd{
+  font-family:"SimSun",serif; font-size:9px; margin-left:7px; letter-spacing:0;
+  border:0; background:none; color:rgba(38,36,31,.42); padding:0;
+  display:inline-block; transform:translateY(-.5px);
+}
+.btn.primary{ background:#a8402f; border-color:#a8402f; color:#f6f1e4; }
+.btn.primary kbd{ color:rgba(246,241,228,.72); }
+.btn.primary:hover{ background:#943526; border-color:#943526; color:#f6f1e4; }
+
+/* 机位：甲乙丙丁 */
+.vseg{ display:flex; gap:6px; }
+.vseg button{
+  width:30px; height:28px; border:1px solid rgba(38,36,31,.34); background:transparent;
+  font-family:"KaiTi",serif; font-size:13px; color:rgba(38,36,31,.62); cursor:pointer;
+  transition:.2s; border-radius:0;
+}
+.vseg button:hover{ border-color:#a8402f; color:#a8402f; }
+.vseg button.on{ background:#26241f; border-color:#26241f; color:#f4efe3; }
+
+/* 滑杆 */
+.s-lab{ font-family:"KaiTi",serif; font-size:11px; letter-spacing:.18em; color:rgba(38,36,31,.45); }
+
+/* 底注 */
+.hud{
+  font-family:"KaiTi","STKaiti",serif; letter-spacing:.14em;
+  color:rgba(38,36,31,.56); font-size:11px;
+}
+.hud-l .live{ background:#a8402f; }
+.hud-c{ letter-spacing:.2em; }
+.hud-r{ letter-spacing:.16em; }
+
+/* 双线外框 */
+.frame{
+  inset:14px;
+  border:1px solid rgba(38,36,31,.34);
+  box-shadow:inset 0 0 0 4px #f4efe3, inset 0 0 0 5px rgba(38,36,31,.12);
+}
+.frame i{ width:9px; height:9px; border-color:rgba(38,36,31,.55); }
+
+/* ── 雨境 */
+#rleaders { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; overflow: visible; }
+#rleaders path { fill: none; stroke: rgba(38,36,31,.42); stroke-width: 1; stroke-dasharray: 3 4; }
+#rleaders .dot { fill: #a8402f; }
+.rlabels { position: fixed; inset: 0; pointer-events: none; z-index: 4; opacity: 0; transition: opacity .5s ease; }
+.rlabels.on { opacity: 1; }
+.rlabels .rl {
+  position: absolute; left: 0; top: 0; width: 250px; text-align: right;
+  display: grid; grid-template-columns: auto auto; column-gap: 8px; row-gap: 3px;
+  align-items: center; justify-content: end;
+  transition: opacity .4s ease;
+}
+.rl-s { grid-column: 1 / -1; }
+.rl-k {
+  font: 11px/1 "SimSun", serif; color: #f7f2e6; background: #a8402f;
+  width: 16px; height: 16px; display: grid; place-items: center; margin-bottom: 3px;
+}
+.rl-t { font: 15px/1 "SimSun", serif; letter-spacing: .18em; color: #26241f; }
+.rl-s { font: 12px/1.5 "SimHei", sans-serif; color: rgba(38,36,31,.62); letter-spacing: .02em; }
+body.is-rain .masthead h1 { opacity: .92; }
+#btnRain.on { background: #a8402f; color: #f6f1e4; border-color: #a8402f; }
+#btnRain.on kbd { border-color: rgba(246,241,228,.5); color: rgba(246,241,228,.8); }
+
+html.static .rlabels, html.static .rlabels .rl, html.static .tip { transition: none !important; }
+
+/* 古籍摘引 */
+.p-cite { margin: 12px 0 0; padding: 1px 0 1px 13px; border-left: 2px solid #a8402f; }
+.p-cite blockquote { margin: 0; font-family: KaiTi, STKaiti, "楷体", serif; font-size: 13.5px; line-height: 1.85; color: #3a362e; letter-spacing: .02em; }
+.p-cite figcaption { margin-top: 4px; font-family: SimHei, "Microsoft YaHei", sans-serif; font-size: 9.5px; letter-spacing: .1em; color: #8d8474; text-align: right; }
+
+</style>
+<link rel="preconnect" href="https://fastly.jsdelivr.net" crossorigin>
+<link rel="modulepreload" href="https://fastly.jsdelivr.net/npm/three@0.160.0/build/three.module.js" crossorigin>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://fastly.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://fastly.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<div class="paper-grain"></div>
+<div class="vignette"></div>
+
+<div class="frame" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+
+<header class="masthead">
+  <div class="brand">
+    <p class="eyebrow">古艺新生<i>·</i>传统文化与数字艺术融合</p>
+    <h1><span class="t">古建新生</span><span class="seal">營造</span></h1>
+    <div class="rule"></div>
+    <p class="sub">一座重檐六角亭的七层拆装</p>
+    <p class="brand-note">拆开一座亭子，看见它怎样立起来</p>
+  </div>
+</header>
+
+<div class="meta">
+  <p class="meta-h">建筑档案</p>
+  <dl>
+    <div><dt>形制</dt><dd>重檐六角亭</dd></div>
+    <div><dt>构件</dt><dd>七层 · 十二攒斗拱</dd></div>
+    <div><dt>通高</dt><dd>十 · 三 米</dd></div>
+  </dl>
+</div>
+
+<aside class="panel" id="panel"></aside>
+
+<div class="tip" id="tip" role="status" aria-live="polite">
+  <div class="tip-head"><span class="tip-k"></span><span class="tip-l"></span></div>
+  <p class="tip-d"></p>
+  <span class="tip-hint">点击放大查看</span>
+</div>
+
+<div class="labels" id="labels"></div>
+<div class="rlabels" id="rlabels"></div>
+<svg id="rleaders" xmlns="http://www.w3.org/2000/svg"></svg>
+<svg id="leaders" xmlns="http://www.w3.org/2000/svg"></svg>
+
+<footer class="toolbar">
+  <div class="col col-sel">
+    <p class="col-h">构件<i id="selI">〇</i>／七</p>
+    <div class="chips" id="chips"></div>
+  </div>
+  <div class="col col-acts">
+    <p class="col-h">操作</p>
+    <div class="acts">
+      <button class="btn primary" id="btnExplode">逐层分解<kbd>E</kbd></button>
+      <button class="btn" id="btnReset">复位<kbd>R</kbd></button>
+      <button class="btn" id="btnRain" aria-pressed="false">雨境<kbd>Q</kbd></button>
+    </div>
+  </div>
+  <div class="col col-view">
+    <p class="col-h">机位<em id="vcn">四十五度</em></p>
+    <div class="vseg" id="vseg">
+      <button data-v="0" class="on" title="四十五度">甲</button>
+      <button data-v="1" title="正面">乙</button>
+      <button data-v="2" title="俯视">丙</button>
+      <button data-v="3" title="檐下">丁</button>
+    </div>
+  </div>
+  <div class="col col-slide">
+    <p class="col-h">线框 ／ 实体</p>
+    <div class="slider">
+      <span class="s-lab">线框</span>
+      <input id="slider" type="range" min="0" max="100" value="100">
+      <span class="s-lab">实体</span>
+    </div>
+  </div>
+</footer>
+
+<div class="hud">
+  <p class="hud-l"><span class="live"></span>三维已就绪</p>
+  <p class="hud-c" id="keys">↑↓ 选层　←→ 机位　E 分解　R 复位　W 线框　Q 雨境　一至七 直达　双击 复位</p>
+  <p class="hud-r">程序化几何 · 不载外部模型</p>
+</div>
+
+<div class="boot">
+  <div class="b-t">古建新生</div>
+  <div class="b-s">正在装配木构 · 首次打开需联网加载 Three.js</div>
+  <div class="b-line"><i></i></div>
+</div>
+
+<script>
+window.addEventListener('error', (e) => {
+  document.title = '载入出错 ' + (e.message || '');
+  const b = document.querySelector('.boot .b-s');
+  if (b) b.textContent = '载入出错：' + (e.message || '请检查网络后刷新');
+});
+window.addEventListener('unhandledrejection', (e) => {
+  const m = (e.reason && e.reason.message) || e.reason;
+  document.title = '载入出错 ' + m;
+  const b = document.querySelector('.boot .b-s');
+  if (b) b.textContent = '载入出错：' + m + '（若为网络问题，请联网后刷新）';
+});
+</script>
+<script type="module">
+/* 《古建新生》— 单文件构建：scene + app */
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ============================ 场景：程序化几何 ============================ */
+// 《古建新生》— 重檐六角亭程序化几何
+// 全部构件由基础几何体拼装：六棱柱、圆柱、Box、Lathe、Tube、自定义屋面网格
+
+const PAL = {
+  paper: 0xf3efe5,
+  ink: 0x26241f,
+  stone: 0xc2b9a5,
+  stoneDark: 0xb0a793,
+  stoneLight: 0xcfc6b3,
+  wood: 0x7e4f31,
+  woodDark: 0x5c3a22,
+  woodLight: 0xa4714a,
+  red: 0xa8402f,
+  redDark: 0x8a3223,
+  tile: 0x46524d,
+  tileDark: 0x38423f,
+  tileLight: 0x556360,
+  plaster: 0xd7ccb7,
+  plasterDark: 0xbdb19a,
+  bronze: 0x7d6b4c
+};
+
+const PART_DEFS = [
+  {
+    key: 'L1', label: '台基与踏跺', short: '台基', explodeY: 0,
+    note: '条石垒出台明，把整座木构抬离地面，隔潮防涝；前出踏跺，定下进入的方向与高度。',
+    detail: '三层条石叠成台明：底一层最宽，压住地面；中间收进；顶面铺压面石。台面高出地面约半米，把木柱与潮气隔开。正面三级踏跺，两侧垂带石把上下路线收在正面。'
+  },
+  {
+    key: 'L2', label: '柱网与柱础', short: '柱网', explodeY: 1.25,
+    note: '六根檐柱按六角定位，柱础承柱并把荷载传给台基；柱网一定，开间与进深随之确定。',
+    detail: '六根檐柱各落在一个覆盆式柱础上：础面承柱，础底把荷载摊到台基。六角柱网每面一柱，柱头之间留出的净距就是开间，额枋与斗拱都照这个尺寸排布。柱头微向内倾，称侧脚，使柱网在侧向受力时更稳。'
+  },
+  {
+    key: 'L3', label: '额枋与雀替', short: '额枋', explodeY: 2.50,
+    note: '额枋把柱头连成闭合的圈梁，抵抗侧向推力；雀替填在柱与枋交接处，缩短净跨、加固节点。',
+    detail: '额枋横在柱头之间，把六根柱连成一圈闭合的梁；下面再压一道由额，上下两道横梁夹住柱头。雀替塞进柱与枋的转角，把净跨缩短，也让节点在侧向受力时不致扭裂。'
+  },
+  {
+    key: 'L4', label: '斗拱', short: '斗拱', explodeY: 3.75,
+    note: '将屋面重量层层传递到柱头，同时把屋檐挑出以保护柱根。',
+    detail: '坐斗坐在柱头上，第一跳华拱向外出挑，第二跳慢拱再出一跳，最上用令拱托住檐檁；每跳两端以小升承住上一层拱。十二攒沿圈梁排开，把屋面重量分成小份传到柱头，同时把屋檐挑出一米多。昂嘴斜下挑出，端头斜切，承住檐口荷载。'
+  },
+  {
+    key: 'L5', label: '檐椽与飞檐', short: '檐椽', explodeY: 5.40,
+    note: '檐椽承托屋面并向外挑出，角部起翘成飞檐；檐口因此深远，雨水被送出柱根之外。',
+    detail: '檐椽从檐檁向外斜出，上端顶住瓦口，下端挑出檐口；飞椽再接一段，把檐口抬平、压出反宇的曲线。转角处角梁加粗，翼角因此能起翘而不塌。角梁沿转角斜下，端头起翘冲出，形成反宇的翼角。'
+  },
+  {
+    key: 'L6', label: '瓦垄与屋脊', short: '屋脊', explodeY: 6.60,
+    note: '瓦垄顺坡排列排水，屋脊压住瓦面交接处，防止渗漏，也把屋顶轮廓收紧。',
+    detail: '上檐按六角分坡，每坡排瓦垄，垄间是瓦沟；六条垂脊压在两个坡面的交线上，把雨水挡在接缝之外。屋面越近屋脊越陡，这条曲线由举架定，不是随手画的。'
+  },
+  {
+    key: 'L7', label: '宝顶', short: '宝顶', explodeY: 7.95,
+    note: '位于屋脊交汇的最高处，封住顶部节点，收束整座建筑的轮廓。',
+    detail: '宝顶坐在六条垂脊的交点上：下面是须弥座式的宝顶座，收住脊端的节点；上面是宝珠与刹尖。它压住整个屋顶的最高处，也是全亭轮廓的收笔。'
+  }
+];
+
+// 构件档案：每层的规格（供右侧档案卡读取）
+const SPEC = {
+  L1: [['台明', '三层条石 · 高 0.62 m'], ['踏跺', '三级 · 两侧垂带'], ['用材', '花岗岩 · 压面石收边']],
+  L2: [['檐柱', '6 根 · 柱头 3.94 m'], ['柱础', '6 座 · 覆盆式'], ['柱网', '六角 · 每面一柱']],
+  L3: [['额枋', '6 道 · 闭合圈梁'], ['由额', '6 道 · 在额枋之下'], ['雀替', '12 只 · 柱枋转角']],
+  L4: [['斗拱', '12 攒 · 柱头与补间'], ['出跳', '两跳 · 挑出约 1.06 m'], ['每攒', '坐斗 + 拱 + 升 13 件']],
+  L5: [['檐椽', '36 根 · 飞椽 36 根'], ['鼓座', '6 面 · 板壁与直棂窗相间'], ['上层斗拱', '6 攒 · 承上檐']],
+  L6: [['瓦垄', '每坡 10 垄 · 六坡'], ['垂脊', '6 条 · 压在两坡交线'], ['举折', '近脊愈陡 · 凹曲屋面']],
+  L7: [['宝顶', '1 座 · 须弥座 + 宝珠'], ['位置', '六条垂脊交点'], ['作用', '封住顶部节点 · 收束轮廓']]
+};
+const EN = {
+  L1: 'PLATFORM & STEPS', L2: 'COLUMNS & PLINTHS', L3: 'ARCHITRAVE & SPANDRELS',
+  L4: 'BRACKET SETS · DOUGONG', L5: 'RAFTERS & FLYING EAVES',
+  L6: 'TILES & RIDGES', L7: 'FINIAL'
+};
+const CITE = {
+  L1: ['造殿阶基之制：长随间广，其广随间深。', '《营造法式 · 石作制度》'],
+  L2: ['凡立柱，并令柱首微收向内，柱脚微出向外，谓之侧脚。', '《营造法式 · 大木作制度二》'],
+  L3: ['造阑额之制：广加材一倍，厚减广三分之一。', '《营造法式 · 大木作制度一》'],
+  L4: ['造斗之制有四：一曰栌斗，二曰交互斗，三曰齐心斗，四曰散斗。', '《营造法式 · 大木作制度一》'],
+  L5: ['如鸟斯革，如翚斯飞。', '《诗经 · 小雅 · 斯干》'],
+  L6: ['葺屋参分，瓦屋四分。', '《周礼 · 考工记》'],
+  L7: ['攒尖之顶，覆以宝顶，以收全局之势。', '《营造法原 · 亭榭》']
+};
+const PAVILION_CITE = ['亭者，停也，所以停憩游行也。', '《园冶 · 亭榭》'];
+for (const d of PART_DEFS) { d.spec = SPEC[d.key] || []; d.en = EN[d.key] || ''; d.cite = CITE[d.key] || null; }
+
+const R_PLAT = 3.00;
+const R_COL = 2.35;
+const Y_PLAT = 0.62;
+const Y_COL_TOP = 3.94;
+const Y_EAVE = 5.12;
+const R_EAVE = 3.85;
+const Y_UPEAVE = 7.52;
+const APEX = 8.92;
+
+// 下檐屋面剖面（外→内）
+const LOWER_PROFILE = [
+  [R_EAVE, 5.12], [3.55, 5.24], [3.15, 5.42], [2.70, 5.63], [2.20, 5.87], [1.62, 6.18]
+];
+// 上檐屋面剖面（外→内）
+const UPPER_PROFILE = [
+  [2.35, 8.27], [2.05, 8.41], [1.70, 8.59], [1.30, 8.85], [0.85, 9.11],
+  [0.58, 9.28], [0.34, 9.395], [0.11, 9.45]
+];
+
+function sampleProfile(profile, t) {
+  const N = profile.length;
+  const f = t * (N - 1);
+  const i = Math.min(N - 2, Math.max(0, Math.floor(f)));
+  const k = f - i;
+  return [
+    profile[i][0] * (1 - k) + profile[i + 1][0] * k,
+    profile[i][1] * (1 - k) + profile[i + 1][1] * k
+  ];
+}
+
+function roofPoint(profile, s, u, t, lift, flare) {
+  let [r, y] = sampleProfile(profile, t);
+  const uc = Math.abs(u - 0.5) * 2;
+  const corner = Math.pow(uc, 2.1);
+  const tt = Math.max(0, 1 - t);
+  r += flare * corner * Math.pow(tt, 2.0);
+  y += lift * corner * Math.pow(tt, 1.55);
+  const a0 = s * Math.PI / 3, a1 = (s + 1) * Math.PI / 3;
+  const dx = Math.cos(a0) * (1 - u) + Math.cos(a1) * u;
+  const dz = Math.sin(a0) * (1 - u) + Math.sin(a1) * u;
+  return new THREE.Vector3(dx * r, y, dz * r);
+}
+
+function makeRoofGeometry(profile, opts) {
+  const { lift = 0.4, flare = 0.14, uSeg = 16, tSeg = 12, thick = 0 } = opts || {};
+  const pos = [];
+  const idx = [];
+  const topStarts = [];
+  const botStarts = [];
+  for (let s = 0; s < 6; s++) {
+    const start = pos.length / 3;
+    for (let ti = 0; ti <= tSeg; ti++) {
+      const t = ti / tSeg;
+      for (let ui = 0; ui <= uSeg; ui++) {
+        const p = roofPoint(profile, s, ui / uSeg, t, lift, flare);
+        pos.push(p.x, p.y, p.z);
+      }
+    }
+    for (let ti = 0; ti < tSeg; ti++) {
+      for (let ui = 0; ui < uSeg; ui++) {
+        const a = start + ti * (uSeg + 1) + ui;
+        const b = a + 1;
+        const c = a + (uSeg + 1);
+        const d = c + 1;
+        idx.push(a, c, b, b, c, d);
+      }
+    }
+    topStarts.push(start);
+  }
+  // 屋面厚度：再生成一层下表面（反向绕序）并在檐口封边，屋面成为实心板
+  if (thick > 0) {
+    for (let s = 0; s < 6; s++) {
+      const start = pos.length / 3;
+      for (let ti = 0; ti <= tSeg; ti++) {
+        const t = ti / tSeg;
+        for (let ui = 0; ui <= uSeg; ui++) {
+          const p = roofPoint(profile, s, ui / uSeg, t, lift, flare);
+          pos.push(p.x, p.y - thick, p.z);
+        }
+      }
+      for (let ti = 0; ti < tSeg; ti++) {
+        for (let ui = 0; ui < uSeg; ui++) {
+          const a = start + ti * (uSeg + 1) + ui;
+          const b = a + 1;
+          const c = a + (uSeg + 1);
+          const d = c + 1;
+          idx.push(a, b, c, b, d, c);
+        }
+      }
+      botStarts.push(start);
+    }
+    for (let s = 0; s < 6; s++) {
+      for (let ui = 0; ui < uSeg; ui++) {
+        const a = topStarts[s] + ui;
+        const b = a + 1;
+        const a2 = botStarts[s] + ui;
+        const b2 = a2 + 1;
+        idx.push(a, a2, b, b, a2, b2);
+      }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+// 屋面高度查询（供雨滴落点判定）：给定水平半径，返回最先碰到的屋面 y
+function yFromProfile(profile, r) {
+  for (let i = 0; i < profile.length - 1; i++) {
+    const [r1, y1] = profile[i], [r2, y2] = profile[i + 1];
+    if (r <= r1 && r >= r2) {
+      const k = (r1 - r) / (r1 - r2 || 1);
+      return y1 + (y2 - y1) * k;
+    }
+  }
+  return null;
+}
+
+function roofYAt(r) {
+  if (r <= 2.35) {
+    const y = yFromProfile(UPPER_PROFILE, r);
+    if (y != null) return y;
+  }
+  return yFromProfile(LOWER_PROFILE, r);
+}
+
+
+function buildBuilding() {
+  const buckets = new Map(PART_DEFS.map(d => [d.key, []]));
+  // noEdge=true 的几何只进实体，不参与描边（瓦垄这类细密重复件会把线框糊成一片）
+  const push = (key, geo, color, matrix, noEdge = false) => buckets.get(key).push({ geo, color, matrix, noEdge });
+
+  const MT = (x, y, z, rx = 0, ry = 0, rz = 0) => {
+    const m = new THREE.Matrix4();
+    m.makeRotationFromEuler(new THREE.Euler(rx, ry, rz));
+    m.setPosition(x, y, z);
+    return m;
+  };
+  const box = (key, color, w, h, d, x, y, z, rx = 0, ry = 0, rz = 0) =>
+    push(key, new THREE.BoxGeometry(w, h, d), color, MT(x, y, z, rx, ry, rz));
+  const cyl = (key, color, rt, rb, h, seg, x, y, z, rx = 0, ry = 0, rz = 0) =>
+    push(key, new THREE.CylinderGeometry(rt, rb, h, seg, 1, false, Math.PI / 2), color, MT(x, y, z, rx, ry, rz));
+
+  // ───────────────────────────── L1 台基与踏跺
+  cyl('L1', PAL.stoneDark, R_PLAT + 0.10, R_PLAT + 0.17, 0.26, 6, 0, 0.13, 0);
+  cyl('L1', PAL.stone, R_PLAT - 0.02, R_PLAT + 0.06, 0.20, 6, 0, 0.36, 0);
+  cyl('L1', PAL.stoneLight, R_PLAT - 0.14, R_PLAT - 0.06, 0.14, 6, 0, 0.53, 0);
+  // 阶条石压边
+  for (let s = 0; s < 6; s++) {
+    const am = s * Math.PI / 3 + Math.PI / 6;
+    const ap = (R_PLAT - 0.14) * Math.cos(Math.PI / 6);
+    box('L1', PAL.stoneDark, R_PLAT - 0.14, 0.06, 0.13,
+      Math.cos(am) * ap, 0.59, Math.sin(am) * ap, 0, -am + Math.PI / 2, 0);
+  }
+  // 台面石缝
+  for (let s = 0; s < 6; s++) {
+    const am = s * Math.PI / 3 + Math.PI / 6;
+    const ap = 2.28 * Math.cos(Math.PI / 6);
+    box('L1', PAL.stone, 1.92, 0.004, 0.02,
+      Math.cos(am) * ap, 0.601, Math.sin(am) * ap, 0, -am + Math.PI / 2, 0);
+  }
+  // 正面踏跺（三级）
+  const frontZ = (R_PLAT - 0.06) * Math.cos(Math.PI / 6);
+  const stepW = 2.18;
+  const steps = [
+    { top: 0.44, z: frontZ + 0.15, d: 0.30 },
+    { top: 0.29, z: frontZ + 0.45, d: 0.30 },
+    { top: 0.15, z: frontZ + 0.75, d: 0.30 }
+  ];
+  for (const st of steps) {
+    box('L1', PAL.stone, stepW, st.top, st.d, 0, st.top / 2, st.z);
+    box('L1', PAL.stoneLight, stepW, 0.035, st.d + 0.02, 0, st.top + 0.017, st.z);
+  }
+  // 垂带石
+  for (const sx of [-1, 1]) {
+    box('L1', PAL.stoneDark, 0.24, 0.10, 1.06, sx * (stepW / 2 + 0.12), 0.31, frontZ + 0.45, 0.30, 0, 0);
+    box('L1', PAL.stone, 0.26, 0.34, 0.26, sx * (stepW / 2 + 0.12), 0.17, frontZ + 0.94, 0, 0, 0);
+  }
+
+  // ───────────────────────────── L2 柱网与柱础
+  for (let s = 0; s < 6; s++) {
+    const a = s * Math.PI / 3;
+    const x = Math.cos(a) * R_COL;
+    const z = Math.sin(a) * R_COL;
+    box('L2', PAL.stoneDark, 0.42, 0.09, 0.42, x, 0.655, z, 0, -a, 0);
+    // 覆盆柱础：下枭、盆肚、上收，柱脚坐在盆心上
+    const basin = [[0.272, 0], [0.276, 0.022], [0.262, 0.052], [0.232, 0.082],
+                   [0.203, 0.108], [0.178, 0.128], [0.170, 0.146]]
+      .map(q => new THREE.Vector2(q[0], q[1]));
+    push('L2', new THREE.LatheGeometry(basin, 18), PAL.stone, MT(x, 0.70, z));
+    const h = Y_COL_TOP - 0.84;
+    // 侧脚：柱头微向内倾，绕切向水平轴旋转约 1.3°
+    const tiltAxis = new THREE.Vector3(-Math.sin(a), 0, Math.cos(a));
+    const colM = new THREE.Matrix4().makeTranslation(x, 0.84, z)
+      .multiply(new THREE.Matrix4().makeRotationAxis(tiltAxis, 1.3 * Math.PI / 180))
+      .multiply(new THREE.Matrix4().makeTranslation(0, h / 2, 0));
+    push('L2', new THREE.CylinderGeometry(0.135, 0.162, h, 16), PAL.wood, colM);
+    // 柱头
+    box('L2', PAL.woodDark, 0.32, 0.08, 0.32, x, Y_COL_TOP - 0.04, z, 0, -a, 0);
+  }
+
+  // ───────────────────────────── L3 额枋与雀替
+  for (let s = 0; s < 6; s++) {
+    const a0 = s * Math.PI / 3, a1 = (s + 1) * Math.PI / 3;
+    const am = (a0 + a1) / 2;
+    const rm = R_COL * Math.cos(Math.PI / 6);
+    const L = R_COL;
+    const bx = Math.cos(am) * rm, bz = Math.sin(am) * rm;
+    box('L3', PAL.wood, L, 0.32, 0.15, bx, 4.10, bz, 0, -am + Math.PI / 2, 0);
+    box('L3', PAL.woodDark, L - 0.24, 0.24, 0.06, bx, 3.82, bz, 0, -am + Math.PI / 2, 0);
+    box('L3', PAL.wood, L, 0.11, 0.12, bx, 3.645, bz, 0, -am + Math.PI / 2, 0);
+    // 雀替
+    for (const side of [-1, 1]) {
+      const along = (L / 2 - 0.17) * side;
+      const px = bx + Math.cos(am + Math.PI / 2) * along;
+      const pz = bz + Math.sin(am + Math.PI / 2) * along;
+      const shape = new THREE.Shape();
+      shape.moveTo(0, 0);
+      shape.lineTo(0.40, 0);
+      shape.quadraticCurveTo(0.24, -0.012, 0.13, -0.13);
+      shape.quadraticCurveTo(0.07, -0.20, 0, -0.22);
+      shape.lineTo(0, 0);
+      const eg = new THREE.ExtrudeGeometry(shape, { depth: 0.085, bevelEnabled: false });
+      eg.translate(0, 0, -0.0425);
+      const m = new THREE.Matrix4()
+        .makeTranslation(px, 3.56, pz)
+        .multiply(new THREE.Matrix4().makeRotationY(-am + Math.PI / 2))
+        .multiply(new THREE.Matrix4().makeRotationY(side > 0 ? 0 : Math.PI));
+      push('L3', eg, PAL.woodDark, m);
+    }
+  }
+
+  // ───────────────────────────── L4 斗拱
+  const addDougong = (key, cx, cz, rotY, y0, s) => {
+    const base = new THREE.Matrix4().makeTranslation(cx, y0, cz)
+      .multiply(new THREE.Matrix4().makeRotationY(rotY));
+    const B = (color, w, h, d, lx, ly, lz) => {
+      const m = base.clone().multiply(new THREE.Matrix4().makeTranslation(lx * s, ly * s, lz * s));
+      push(key, new THREE.BoxGeometry(w * s, h * s, d * s), color, m);
+    };
+    const Br = (color, w, h, d, lx, ly, lz, rx) => {
+      const m = base.clone()
+        .multiply(new THREE.Matrix4().makeTranslation(lx * s, ly * s, lz * s))
+        .multiply(new THREE.Matrix4().makeRotationX(rx));
+      push(key, new THREE.BoxGeometry(w * s, h * s, d * s), color, m);
+    };
+    // 坐斗（斗欹）
+    B(PAL.red, 0.40, 0.21, 0.40, 0, 0.105, 0);
+    B(PAL.woodDark, 0.30, 0.05, 0.30, 0, 0.235, 0);
+    // 下昂：自坐斗向外斜下，端头斜切昂嘴（楔形截面沿出跳方向挤出）
+    {
+      const L = 0.94, W = 0.15, H = 0.155;
+      const shp = new THREE.Shape();
+      shp.moveTo(-L / 2, H / 2);
+      shp.lineTo(L / 2 - 0.17, H / 2);
+      shp.lineTo(L / 2, -H * 0.26);
+      shp.lineTo(L / 2, -H / 2);
+      shp.lineTo(-L / 2, -H / 2);
+      shp.closePath();
+      const angGeo = new THREE.ExtrudeGeometry(shp, { depth: W, bevelEnabled: false, curveSegments: 1 });
+      angGeo.translate(0, 0, -W / 2);
+      angGeo.rotateY(-Math.PI / 2);
+      const angM = base.clone()
+        .multiply(new THREE.Matrix4().makeTranslation(0, 0.315 * s, 0.30 * s))
+        .multiply(new THREE.Matrix4().makeRotationX(-0.30));
+      push(key, angGeo, PAL.woodDark, angM);
+    }
+    // 第一跳华拱（切向）+ 两端升
+    B(PAL.wood, 0.86, 0.18, 0.18, 0, 0.325, 0);
+    B(PAL.red, 0.20, 0.14, 0.20, -0.37, 0.455, 0);
+    B(PAL.red, 0.20, 0.14, 0.20, 0.37, 0.455, 0);
+    // 第一跳出跳（径向）+ 升
+    B(PAL.wood, 0.18, 0.18, 0.58, 0, 0.325, 0.32);
+    B(PAL.red, 0.17, 0.14, 0.17, 0, 0.455, 0.55);
+    // 第二跳慢拱（切向）+ 升
+    B(PAL.wood, 0.98, 0.18, 0.18, 0, 0.55, 0.28);
+    B(PAL.red, 0.20, 0.14, 0.18, -0.43, 0.68, 0.28);
+    B(PAL.red, 0.20, 0.14, 0.18, 0.43, 0.68, 0.28);
+    // 耍头（径向出挑）
+    B(PAL.woodDark, 0.165, 0.17, 0.72, 0, 0.545, 0.66);
+    // 令拱（承檐檁）
+    B(PAL.wood, 0.92, 0.17, 0.17, 0, 0.70, 0.86);
+    B(PAL.red, 0.18, 0.13, 0.18, 0, 0.795, 0.86);
+    // 撑头木
+    B(PAL.woodDark, 0.19, 0.16, 0.56, 0, 0.715, 0.58);
+  };
+
+  for (let s = 0; s < 6; s++) {
+    const a = s * Math.PI / 3;
+    addDougong('L4', Math.cos(a) * R_COL, Math.sin(a) * R_COL, Math.PI / 2 - a, 4.22, 1.02);
+    const am = a + Math.PI / 6;
+    const rm = R_COL * Math.cos(Math.PI / 6);
+    addDougong('L4', Math.cos(am) * rm, Math.sin(am) * rm, Math.PI / 2 - am, 4.22, 0.86);
+  }
+  // 拱眼壁：填住斗拱之间的空隙，让檐下成为连续的暗面
+  for (let s = 0; s < 6; s++) {
+    const am = s * Math.PI / 3 + Math.PI / 6;
+    const ap = R_COL * Math.cos(Math.PI / 6) + 0.06;
+    box('L4', PAL.woodDark, R_COL * 0.99, 0.60, 0.06, Math.cos(am) * ap, 4.65, Math.sin(am) * ap, 0, -am + Math.PI / 2, 0);
+  }
+
+  // 正心枋 / 挑檐枋：把十二攒斗拱连成闭合的一圈
+  for (let s = 0; s < 6; s++) {
+    const am = s * Math.PI / 3 + Math.PI / 6;
+    const ap1 = R_COL * Math.cos(Math.PI / 6), L1 = R_COL;
+    box('L4', PAL.woodDark, L1, 0.15, 0.17, Math.cos(am) * ap1, 5.03, Math.sin(am) * ap1, 0, -am + Math.PI / 2, 0);
+    const R2 = 3.20, ap2 = R2 * Math.cos(Math.PI / 6), L2 = R2;
+    box('L4', PAL.wood, L2, 0.13, 0.15, Math.cos(am) * ap2, 5.11, Math.sin(am) * ap2, 0, -am + Math.PI / 2, 0);
+  }
+
+  // ───────────────────────────── L5 檐椽与飞檐
+  push('L5', makeRoofGeometry(LOWER_PROFILE, { lift: 0.40, flare: 0.15, uSeg: 18, tSeg: 14, thick: 0.16 }), PAL.tile, new THREE.Matrix4());
+  push('L6', makeRoofGeometry(UPPER_PROFILE, { lift: 0.26, flare: 0.10, uSeg: 14, tSeg: 12, thick: 0.13 }), PAL.tile, new THREE.Matrix4());
+
+  // 瓦垄
+  const addTileRibs = (key, profile, lift, flare, count, w, hgt, colorA, colorB, tEnd = 0.985) => {
+    for (let s = 0; s < 6; s++) {
+      for (let m = 1; m < count; m++) {
+        const u = m / count;
+        const steps = 9;
+        const pos = [];
+        const idx = [];
+        for (let i = 0; i <= steps; i++) {
+          const t = 0.015 + (tEnd - 0.015) * i / steps;
+          const pA = roofPoint(profile, s, u - w, t, lift, flare);
+          const pB = roofPoint(profile, s, u + w, t, lift, flare);
+          pos.push(pA.x, pA.y + hgt, pA.z, pB.x, pB.y + hgt, pB.z);
+        }
+        for (let i = 0; i < steps; i++) {
+          const a0 = i * 2, b0 = a0 + 1, a1 = a0 + 2, b1 = a0 + 3;
+          idx.push(a0, b0, a1, a1, b0, b1);
+        }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        g.setIndex(idx);
+        g.computeVertexNormals();
+        push(key, g, m % 2 ? colorA : colorB, new THREE.Matrix4(), true);
+      }
+    }
+  };
+  addTileRibs('L5', LOWER_PROFILE, 0.40, 0.15, 9, 0.009, 0.020, PAL.tileDark, PAL.tileLight);
+  addTileRibs('L6', UPPER_PROFILE, 0.26, 0.10, 10, 0.011, 0.026, PAL.tileDark, PAL.tileLight, 0.94);
+
+  // 檐口封边（连檐）
+  const addEaveBoard = (key, profile, lift, flare, color, drop) => {
+    const pos = [], idx = [];
+    for (let s = 0; s < 6; s++) {
+      for (let i = 0; i <= 10; i++) {
+        const u = i / 10;
+        const p = roofPoint(profile, s, u, 0, lift, flare);
+        pos.push(p.x, p.y, p.z, p.x * 0.985, p.y - drop, p.z * 0.985);
+      }
+    }
+    for (let s = 0; s < 6; s++) {
+      const base = s * 11;
+      for (let i = 0; i < 10; i++) {
+        const a = base + i;
+        const o = a * 2;
+        idx.push(o, o + 2, o + 1, o + 1, o + 2, o + 3);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    push(key, g, color, new THREE.Matrix4());
+  };
+  addEaveBoard('L5', LOWER_PROFILE, 0.40, 0.15, PAL.woodDark, 0.11);
+  addEaveBoard('L6', UPPER_PROFILE, 0.26, 0.10, PAL.woodDark, 0.10);
+
+  // 檐椽 + 飞椽
+  const addRafters = (key, profile, lift, flare, count, scale) => {
+    for (let s = 0; s < 6; s++) {
+      for (let i = 0; i < count; i++) {
+        const u = (i + 0.5) / count;
+        const pIn = roofPoint(profile, s, u, 0.34, lift, flare);
+        const pMid = roofPoint(profile, s, u, 0.07, lift, flare);
+        const dir = new THREE.Vector3().subVectors(pMid, pIn).normalize();
+        const pTip = pMid.clone().addScaledVector(dir, 0.02 * scale);
+        pTip.y -= 0.03;
+        const seg = (a, b, rad, col) => {
+          const v = new THREE.Vector3().subVectors(b, a);
+          const len = v.length();
+          const g = new THREE.CylinderGeometry(rad, rad, len, 7);
+          const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), v.clone().normalize());
+          const m = new THREE.Matrix4().makeRotationFromQuaternion(q);
+          const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
+          m.setPosition(mid.x, mid.y - 0.185 * scale, mid.z);
+          push(key, g, col, m);
+        };
+        seg(pIn, pMid, 0.038 * scale, PAL.wood);
+        seg(pMid, pTip, 0.030 * scale, PAL.woodDark);
+      }
+    }
+  };
+  addRafters('L5', LOWER_PROFILE, 0.40, 0.15, 6, 1.0);
+  addRafters('L6', UPPER_PROFILE, 0.26, 0.10, 6, 0.62);
+
+  // 挑檐檁：坐在挑檐枋上、顶住屋面底，闭合檐下缝隙
+  for (let s = 0; s < 6; s++) {
+    const a = s * Math.PI / 3, am = a + Math.PI / 6;
+    const r1 = 3.18, ap1 = r1 * Math.cos(Math.PI / 6);
+    cyl('L5', PAL.wood, 0.070, 0.070, 1.94, 10, Math.cos(am) * ap1, 5.145, Math.sin(am) * ap1, 0, -am + Math.PI / 2, Math.PI / 2);
+    const r2 = 2.14, ap2 = r2 * Math.cos(Math.PI / 6);
+    cyl('L5', PAL.wood, 0.062, 0.062, 1.30, 10, Math.cos(am) * ap2, 8.155, Math.sin(am) * ap2, 0, -am + Math.PI / 2, Math.PI / 2);
+  }
+
+  // 角梁：沿六角转角斜下，承住翼角
+  const addCornerBeam = (key, profile, lift, flare, tEnd, rad, color) => {
+    for (let s = 0; s < 6; s++) {
+      const pts = [];
+      const steps = 10;
+      for (let i = 0; i <= steps; i++) {
+        const t = tEnd * i / steps;
+        const tt = Math.pow(t / tEnd, 0.82) * tEnd;   // 根部采样疏、端头密
+        const q = roofPoint(profile, s, 0.0, tt, lift, flare);
+        q.y -= 0.075 + 0.055 * tt;
+        q.y += 0.045 * Math.pow(t / tEnd, 2.6);       // 端头再抬一点，反宇更明显
+        q.x *= 0.986; q.z *= 0.986;
+        pts.push(q);
+      }
+      const curve = new THREE.CatmullRomCurve3(pts);
+      push(key, new THREE.TubeGeometry(curve, 18, rad, 6, false), color, new THREE.Matrix4());
+    }
+  };
+  addCornerBeam('L5', LOWER_PROFILE, 0.40, 0.15, 0.60, 0.062, PAL.woodDark);
+  addCornerBeam('L6', UPPER_PROFILE, 0.26, 0.10, 0.64, 0.046, PAL.woodDark);
+
+  // 围脊鼓座：封闭六棱墙体，交替板壁与直棂窗
+  const R_DRUM = 1.58, YD0 = 6.14, YD1 = 7.47;
+  cyl('L5', PAL.woodDark, 1.66, 1.66, 0.05, 6, 0, YD0 + 0.02, 0);
+  cyl('L5', PAL.woodDark, 1.66, 1.66, 0.05, 6, 0, YD1 - 0.02, 0);
+  for (let s = 0; s < 6; s++) {
+    const am = s * Math.PI / 3 + Math.PI / 6;
+    const ap = R_DRUM * Math.cos(Math.PI / 6);
+    const x = Math.cos(am) * ap, z = Math.sin(am) * ap;
+    const ry = -am + Math.PI / 2;
+    const L = R_DRUM, H = YD1 - YD0, cy = (YD0 + YD1) / 2;
+    const tx = Math.cos(am + Math.PI / 2), tz = Math.sin(am + Math.PI / 2);
+    if (s % 2 === 0) {
+      box('L5', PAL.woodDark, L, H, 0.10, x, cy, z, 0, ry, 0);
+      box('L5', PAL.plasterDark, L - 0.20, H - 0.26, 0.02, x + Math.cos(am) * 0.055, cy, z + Math.sin(am) * 0.055, 0, ry, 0);
+      // 板壁分格：两道竖棂、一道腰枋
+      for (const ox of [-0.36, 0.36]) {
+        box('L5', PAL.wood, 0.028, H - 0.30, 0.03, x + tx * ox + Math.cos(am) * 0.068, cy, z + tz * ox + Math.sin(am) * 0.068, 0, ry, 0);
+      }
+      // 板壁四边抹头与立颊
+      for (const sy of [-1, 1]) {
+        box('L5', PAL.woodDark, L - 0.14, 0.055, 0.075, x + Math.cos(am) * 0.062, cy + sy * (H / 2 - 0.10), z + Math.sin(am) * 0.062, 0, ry, 0);
+      }
+      for (const sx of [-1, 1]) {
+        const ox = (L / 2 - 0.10) * sx;
+        box('L5', PAL.woodDark, 0.06, H - 0.20, 0.075, x + tx * ox + Math.cos(am) * 0.062, cy, z + tz * ox + Math.sin(am) * 0.062, 0, ry, 0);
+      }
+    } else {
+      box('L5', PAL.woodDark, L, 0.12, 0.13, x, YD0 + 0.06, z, 0, ry, 0);
+      box('L5', PAL.woodDark, L, 0.14, 0.13, x, YD1 - 0.07, z, 0, ry, 0);
+      for (const sx of [-1, 1]) {
+        const ox = (L / 2 - 0.06) * sx;
+        box('L5', PAL.woodDark, 0.12, H - 0.24, 0.13, x + tx * ox, cy, z + tz * ox, 0, ry, 0);
+      }
+      box('L5', PAL.ink, L - 0.24, H - 0.24, 0.02, x - Math.cos(am) * 0.05, cy, z - Math.sin(am) * 0.05, 0, ry, 0);
+      for (let i = 0; i < 6; i++) {
+        const ox = (i - 2.5) * (L - 0.30) / 6;
+        box('L5', PAL.wood, 0.035, H - 0.26, 0.05, x + tx * ox, cy, z + tz * ox, 0, ry, 0);
+      }
+    }
+  }
+  // 围脊：下檐与上层鼓座交接处的一圈瓦脊，封住屋面开口
+  for (let s = 0; s < 6; s++) {
+    const am = s * Math.PI / 3 + Math.PI / 6;
+    const ap = 1.53;
+    box('L5', PAL.tileDark, 1.76, 0.16, 0.30, Math.cos(am) * ap, 6.235, Math.sin(am) * ap, 0, -am + Math.PI / 2, 0);
+    box('L5', PAL.tile, 1.80, 0.055, 0.34, Math.cos(am) * ap, 6.335, Math.sin(am) * ap, 0, -am + Math.PI / 2, 0);
+  }
+  // 上层额枋
+  for (let s = 0; s < 6; s++) {
+    const am = s * Math.PI / 3 + Math.PI / 6;
+    const ap = 1.66 * Math.cos(Math.PI / 6);
+    box('L5', PAL.wood, 1.66, 0.20, 0.13, Math.cos(am) * ap, 7.57, Math.sin(am) * ap, 0, -am + Math.PI / 2, 0);
+  }
+  // 上层斗拱：柱头 6 攒 + 补间 6 攒，下承额枋、上托挑檐枋
+  for (let s = 0; s < 6; s++) {
+    const a = s * Math.PI / 3;
+    addDougong('L5', Math.cos(a) * 1.66, Math.sin(a) * 1.66, Math.PI / 2 - a, 7.65, 0.66);
+  }
+  // 上层拱眼壁
+  for (let s = 0; s < 6; s++) {
+    const am = s * Math.PI / 3 + Math.PI / 6;
+    const ap = 1.52;
+    box('L5', PAL.woodDark, 1.62, 0.24, 0.055, Math.cos(am) * ap, 7.75, Math.sin(am) * ap, 0, -am + Math.PI / 2, 0);
+  }
+  for (let s = 0; s < 6; s++) {
+    const am = s * Math.PI / 3 + Math.PI / 6;
+    const ap1 = 1.66 * Math.cos(Math.PI / 6);
+    box('L5', PAL.woodDark, 1.70, 0.13, 0.15, Math.cos(am) * ap1, 7.91, Math.sin(am) * ap1, 0, -am + Math.PI / 2, 0);
+    const R2 = 2.14, ap2 = R2 * Math.cos(Math.PI / 6);
+    box('L5', PAL.wood, 2.16, 0.11, 0.13, Math.cos(am) * ap2, 8.07, Math.sin(am) * ap2, 0, -am + Math.PI / 2, 0);
+  }
+
+  // ───────────────────────────── L6 瓦垄与屋脊
+  const addHips = (key, profile, lift, flare, radius, tEnd, color) => {
+    for (let s = 0; s < 6; s++) {
+      const pts = [];
+      const steps = 16;
+      for (let i = 0; i <= steps; i++) {
+        const t = tEnd * i / steps;
+        const p = roofPoint(profile, s, 0.0, t, lift, flare);
+        p.y += 0.05;
+        pts.push(p);
+      }
+      const curve = new THREE.CatmullRomCurve3(pts);
+      push(key, new THREE.TubeGeometry(curve, 28, radius, 8, false), color, new THREE.Matrix4());
+    }
+  };
+  addHips('L5', LOWER_PROFILE, 0.40, 0.15, 0.058, 0.95, PAL.tileDark);
+  // 上檐垂脊止于宝顶座外沿，不再穿进座身
+  let tHipU = 1.0;
+  for (let i = 100; i >= 0; i--) {
+    const tt = i / 100;
+    const q = roofPoint(UPPER_PROFILE, 0, 0.0, tt, 0.26, 0.10);
+    if (Math.hypot(q.x, q.z) >= 0.33) { tHipU = tt; break; }
+  }
+  addHips('L6', UPPER_PROFILE, 0.26, 0.10, 0.058, tHipU, PAL.tileDark);
+
+  // 攒尖收口（藏在宝顶坐下）
+  cyl('L6', PAL.tileDark, 0.24, 0.30, 0.05, 6, 0, 9.418, 0, 0, -Math.PI / 6, 0);
+
+  // 围脊
+  for (let s = 0; s < 6; s++) {
+    const am = s * Math.PI / 3 + Math.PI / 6;
+    const r = 1.74 * Math.cos(Math.PI / 6);
+    const L = 1.80;
+    box('L5', PAL.tileDark, L, 0.15, 0.13, Math.cos(am) * r, 6.24, Math.sin(am) * r, 0, -am + Math.PI / 2, 0);
+    box('L5', PAL.tile, L, 0.045, 0.18, Math.cos(am) * r, 6.32, Math.sin(am) * r, 0, -am + Math.PI / 2, 0);
+  }
+  // ───────────────────────────── L7 宝顶
+  const lathePts = [
+    [0.30, 0.00], [0.32, 0.05], [0.24, 0.10], [0.27, 0.17], [0.34, 0.26],
+    [0.33, 0.36], [0.25, 0.46], [0.16, 0.53], [0.11, 0.60], [0.13, 0.68],
+    [0.10, 0.76], [0.05, 0.86], [0.02, 0.94], [0.0, 0.98]
+  ].map(p => new THREE.Vector2(p[0], p[1]));
+  // 宝顶座：一件六棱须弥座（圭脚—束腰—上枋），埋进屋面，压住六条垂脊
+  const seatPts = [[0.375, 9.358], [0.375, 9.388], [0.340, 9.400], [0.283, 9.418],
+                   [0.258, 9.438], [0.312, 9.456], [0.352, 9.472], [0.330, 9.488],
+                   [0.262, 9.498], [0.238, 9.508]].map(q => new THREE.Vector2(q[0], q[1]));
+  push('L7', new THREE.LatheGeometry(seatPts, 6), PAL.stoneDark, new THREE.Matrix4());
+  cyl('L7', PAL.bronze, 0.245, 0.268, 0.020, 6, 0, 9.514, 0, 0, 0, 0);
+  // 宝珠与刹尖
+  const bead = new THREE.Matrix4().makeScale(0.74, 0.74, 0.74).setPosition(0, 9.522, 0);
+  push('L7', new THREE.LatheGeometry(lathePts, 24), PAL.bronze, bead);
+
+  // ───────────────────────────── 合并与材质
+  const parts = [];
+  const group = new THREE.Group();
+  for (const def of PART_DEFS) {
+    const items = buckets.get(def.key);
+    const geos = [];
+    const edgePositions = [];
+    for (const it of items) {
+      if (!it.noEdge) {
+        // 曲面屋面（L5/L6）边线极密，阈值放大到 42，线框态读得清
+        const threshold = (def.key === 'L5' || def.key === 'L6') ? 42 : 20;
+        const eg = new THREE.EdgesGeometry(it.geo, threshold);
+        eg.applyMatrix4(it.matrix);
+        const earr = eg.attributes.position.array;
+        for (let i = 0; i < earr.length; i++) edgePositions.push(earr[i]);
+        eg.dispose();
+      }
+
+      const g = it.geo.index ? it.geo.toNonIndexed() : it.geo;
+      g.clearGroups();
+      g.applyMatrix4(it.matrix);
+      const n = g.attributes.position.count;
+      const col = new Float32Array(n * 3);
+      const c = new THREE.Color(it.color);
+      for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      for (const k of Object.keys(g.attributes)) {
+        if (!['position', 'normal', 'color'].includes(k)) g.deleteAttribute(k);
+      }
+      if (!g.attributes.normal) g.computeVertexNormals();
+      geos.push(g);
+    }
+    const merged = mergeGeometries(geos, false);
+    merged.computeBoundingBox();
+    const doubleSide = def.key === 'L5' || def.key === 'L6';
+    const solidMat = new THREE.MeshStandardMaterial({
+      vertexColors: true, roughness: 0.88, metalness: 0.0,
+      side: doubleSide ? THREE.DoubleSide : THREE.FrontSide,
+      transparent: true, opacity: 1, depthWrite: true,
+      polygonOffset: true, polygonOffsetFactor: 1.2, polygonOffsetUnits: 1.0
+    });
+    const mesh = new THREE.Mesh(merged, solidMat);
+    mesh.name = def.key;
+    mesh.renderOrder = 2;
+    mesh.userData.partKey = def.key;
+
+    const edgeGeo = new THREE.BufferGeometry();
+    edgeGeo.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
+    const lineMat = new THREE.LineBasicMaterial({
+      color: 0x2a2724, transparent: true, opacity: 0.22, depthWrite: false
+    });
+    const lines = new THREE.LineSegments(edgeGeo, lineMat);
+    lines.renderOrder = 3;
+    lines.userData.partKey = def.key;
+
+    const partGroup = new THREE.Group();
+    partGroup.add(mesh);
+    partGroup.add(lines);
+    partGroup.userData.partKey = def.key;
+    group.add(partGroup);
+
+    const bbox = merged.boundingBox;
+    parts.push({
+      ...def,
+      mesh, lines, solidMat, lineMat, group: partGroup,
+      bbox: bbox.clone(),
+      anchorY: (bbox.min.y + bbox.max.y) / 2
+    });
+  }
+
+  return { group, parts, defs: PART_DEFS };
+}
+
+/* ============================ 交互与渲染 ============================ */
+
+const qs = new URLSearchParams(location.search);
+const STATIC = qs.has('static');
+const STATE = qs.get('state') || 'full';
+
+// ─────────────────────────── 场景基础
+const canvas = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+renderer.setSize(innerWidth, innerHeight, false);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.02;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.5, 220);
+
+const hemi = new THREE.HemisphereLight(0xfffbf2, 0xdcd2bf, 1.02);
+scene.add(hemi);
+const key = new THREE.DirectionalLight(0xfff6e8, 0.62);
+key.position.set(-9, 13, 9);
+key.target.position.set(0, 5.4, 0);
+scene.add(key.target);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0xeef2f4, 0.42);
+fill.position.set(9, 7, -7);
+scene.add(fill);
+const rim = new THREE.DirectionalLight(0xfff1da, 0.22);
+rim.position.set(2, 5, -13);
+scene.add(rim);
+
+const { group, parts } = buildBuilding();
+const partMeshes = parts.map(p => p.mesh);   // 拾取用的 mesh 列表，构建后不再变化
+scene.add(group);
+
+// ─────────────────────────── 状态
+const S = {
+  offsets: new Map(parts.map(p => [p.key, 0])),      // 当前位移
+  targets: new Map(parts.map(p => [p.key, 0])),      // 目标位移
+  exploded: new Set(),
+  selected: null,
+  focus: null,           // 聚焦的构件层（点击放大并虚化其余层；null 为总览）
+  hover: null,
+  slider: 1,
+  labelsOn: false
+};
+
+for (const p of parts) p.baseColor = p.solidMat.color.clone();
+const tmpPaper = new THREE.Color(0xf3efe5);   // 与页面 --paper 一致，虚化层向纸底靠
+
+const BASE = { dist: 31.2, ty: 4.42, az: 0.735, el: 0.225 };
+const FIT = { dist: 57.6, ty: 9.22, az: 0.735, el: 0.255 };
+
+let camTween = null;
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.075;
+controls.enablePan = false;
+controls.minDistance = 9;
+controls.maxDistance = 70;
+controls.minPolarAngle = 0.35;
+controls.maxPolarAngle = Math.PI / 2 - 0.06;
+controls.rotateSpeed = 0.65;
+controls.autoRotateSpeed = 0.34;   // 空闲时缓慢环绕
+let idleT = 0;
+let overCanvas = false;
+function resetIdle() { idleT = 0; controls.autoRotate = false; }
+controls.zoomSpeed = 0.8;
+
+function placeCamera(cfg) {
+  controls.target.set(cfg.tx ?? 0.35, cfg.ty, cfg.tz ?? 0);
+  const d = cfg.dist;
+  camera.position.set(
+    controls.target.x + d * Math.cos(cfg.el) * Math.sin(cfg.az),
+    controls.target.y + d * Math.sin(cfg.el),
+    controls.target.z + d * Math.cos(cfg.el) * Math.cos(cfg.az)
+  );
+  camera.lookAt(controls.target);
+  controls.update();
+}
+
+function tweenCamera(cfg, dur = 900) {
+  if (STATIC) { placeCamera(cfg); return; }
+  camTween = {
+    t: 0, dur,
+    from: { p: camera.position.clone(), t: controls.target.clone() },
+    to: null
+  };
+  // 计算目标位置
+  const tgt = new THREE.Vector3(cfg.tx ?? 0.35, cfg.ty, cfg.tz ?? 0);
+  const d = cfg.dist;
+  camTween.to = {
+    p: new THREE.Vector3(
+      tgt.x + d * Math.cos(cfg.el) * Math.sin(cfg.az),
+      tgt.y + d * Math.sin(cfg.el),
+      tgt.z + d * Math.cos(cfg.el) * Math.cos(cfg.az)
+    ),
+    t: tgt
+  };
+}
+
+placeCamera(BASE);
+
+// ─────────────────────────── 材质与亮度
+function applyMaterials() {
+  const s = S.slider;
+  const solidOpacity = 0.115 + Math.pow(s, 1.35) * 0.885;
+  const edgeOpacity = 0.92 - Math.pow(s, 0.9) * 0.70;
+  const focusKey = S.focus;
+  for (const p of parts) {
+    const blurred = focusKey && p.key !== focusKey;           // 聚焦时其余层虚化
+    const hovered = S.hover === p.key && !blurred;
+    const dense = p.key === 'L5' || p.key === 'L6';           // 屋面边线极密，提亮会整片泛红
+    // 虚化层只留墨线骨架：大块屋面半透明叠加会把画面糊成一层灰，改留边线更干净
+    p.mesh.visible = !blurred;
+    p.solidMat.opacity = solidOpacity;
+    p.solidMat.transparent = s < 0.985 || blurred;
+    p.solidMat.depthWrite = s > 0.92 && !blurred;
+    p.solidMat.side = (s < 0.35 || dense) ? THREE.DoubleSide : THREE.FrontSide;
+    // 虚化：颜色向纸白退，读作"失焦"，而不是单纯变透明
+    p.solidMat.color.copy(p.baseColor).lerp(tmpPaper, blurred ? 0.72 : 0);
+    // 悬停：线提朱红；屋面压暗并把不透明度封顶，避免整片泛红
+    const lineBase = hovered ? (dense ? Math.min(0.85, edgeOpacity) : 1.0) : edgeOpacity;
+    p.lineMat.opacity = lineBase * (blurred ? 0.45 : 1);
+    p.lineMat.color.setHex(hovered ? (dense ? 0x6f3123 : 0xa8402f) : (blurred ? 0x8a8072 : 0x2a2724));
+    p.lineMat.depthTest = s > 0.2;
+    p.solidMat.emissive.setHex(hovered ? 0x6b3a22 : 0x000000);
+    p.solidMat.emissiveIntensity = hovered ? 0.20 : 0;
+    p.mesh.renderOrder = blurred ? 1 : (s < 0.5 ? 1 : 2);
+  }
+}
+
+// ─────────────────────────── 交互：拆装
+let seqTimer = [];
+function clearSeq() { seqTimer.forEach(t => clearTimeout(t)); seqTimer = []; }
+
+const STEP = 190;           // 每层起落的节拍（毫秒）
+
+function seqOrder(dir) {
+  // 分解：自上而下 L7→L2；复位：自下而上 L2→L7
+  return dir ? [...parts].map(p => p.key).reverse()
+             : parts.map(p => p.key).filter(k => k !== 'L1');
+}
+
+function runSeq(dir) {
+  clearSeq();
+  S.focus = null;
+  S.selected = null;
+  document.body.classList.remove('is-focus');
+  applyMaterials();
+  updatePanel();
+  updateChips();
+  if (dir === 0 && S.exploded.size === 0) return;
+  const order = seqOrder(dir);
+  const defs = new Map(parts.map(p => [p.key, p]));
+  order.forEach((k, i) => {
+    seqTimer.push(setTimeout(() => {
+      S.targets.set(k, dir ? defs.get(k).explodeY : 0);
+      if (dir) S.exploded.add(k); else S.exploded.delete(k);
+      updateChips(); updatePanel();
+    }, i * STEP));
+  });
+  seqTimer.push(setTimeout(() => {
+    const done = dir === 1;
+    if (!done) { S.exploded.clear(); for (const p of parts) S.targets.set(p.key, 0); }
+    S.labelsOn = done;
+    document.body.classList.toggle('is-exploded', done);
+    updatePanel(); updateChips();
+    tweenCamera(done ? FIT : BASE, 1000);
+  }, order.length * STEP + 380));
+}
+
+function explodeAll() { runSeq(1); }
+function resetAll() { runSeq(0); }
+
+// ─────────────────────────── 聚焦（放大阅读，不拆解）
+function currentAz() {
+  const dx = camera.position.x - controls.target.x;
+  const dz = camera.position.z - controls.target.z;
+  return Math.atan2(dx, dz);
+}
+
+function focusOn(key) {
+  if (!key || S.focus === key) { clearFocus(); return; }
+  S.focus = key;
+  S.selected = key;
+  const p = parts.find(x => x.key === key);
+  const b = p.bbox;
+  const cy = (b.min.y + b.max.y) / 2 + (S.offsets.get(key) || 0);
+  const size = Math.max(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z);
+  // 斗拱是一圈扁而宽的构件，平视会叠成一团，单独给一点俯角与更近的机位
+  const isRing = key === 'L4';
+  const dist = isRing ? 9.8 : Math.min(26, Math.max(5.4, size * 2.4));
+  tweenCamera({
+    dist,
+    ty: cy + (isRing ? 0.42 : 0.52),
+    tx: (b.min.x + b.max.x) / 2,
+    tz: (b.min.z + b.max.z) / 2,
+    az: currentAz(),
+    el: isRing ? 0.26 : 0.13
+  }, 950);
+  updateFocus();
+}
+
+function clearFocus() {
+  if (!S.focus) return;
+  S.focus = null;
+  S.selected = null;
+  tweenCamera(S.exploded.size > 1 ? FIT : BASE, 900);
+  updateFocus();
+}
+
+function updateFocus() {
+  document.body.classList.toggle('is-focus', !!S.focus);
+  applyMaterials();
+  updatePanel();
+  updateChips();
+}
+
+// ─────────────────────────── 拾取
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2(-10, -10);
+let pointerOverUI = false;
+let hoverDirty = true;      // 仅在指针移动/离开后重算悬停，静止时不再逐帧 raycast
+
+function pick() {
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObjects(partMeshes, false);
+  return hits.length ? hits[0].object.userData.partKey : null;
+}
+
+let px = 0, py = 0;
+renderer.domElement.addEventListener('pointermove', (e) => {
+  pointer.x = (e.clientX / innerWidth) * 2 - 1;
+  pointer.y = -(e.clientY / innerHeight) * 2 + 1;
+  px = e.clientX; py = e.clientY;
+  overCanvas = true;
+  hoverDirty = true;
+  rainLabelsDirty = true;
+  resetIdle();
+  pointerOverUI = !!e.target.closest?.('.panel, .toolbar, .masthead');
+});
+renderer.domElement.addEventListener('pointerleave', () => {
+  pointer.set(-10, -10);
+  overCanvas = false;
+  hoverDirty = true;
+  rainLabelsDirty = true;
+  resetIdle();
+});
+renderer.domElement.addEventListener('pointerdown', () => {
+  tipEl.classList.remove('on');
+  resetIdle();
+});
+renderer.domElement.addEventListener('wheel', () => { rainLabelsDirty = true; resetIdle(); }, { passive: true });
+document.addEventListener('pointerdown', resetIdle, true);
+document.addEventListener('keydown', () => { rainLabelsDirty = true; resetIdle(); }, true);
+renderer.domElement.addEventListener('dblclick', () => {
+  if (S.focus) { S.focus = null; updateFocus(); }
+  resetIdle();
+  tweenCamera(S.exploded.size > 1 ? FIT : BASE, 900);
+});
+
+// ─────────────────────────── 悬停说明浮层
+const tipEl = document.getElementById('tip');
+let tipKey = null;
+const tipK = tipEl.querySelector('.tip-k');
+const tipL = tipEl.querySelector('.tip-l');
+const tipD = tipEl.querySelector('.tip-d');
+
+function updateTip() {
+  const p = S.hover ? parts.find(x => x.key === S.hover) : null;
+  if (!p || p.key === S.selected) {
+    if (tipKey !== null) { tipEl.classList.remove('on'); tipKey = null; }
+    return;
+  }
+  if (tipKey !== p.key) {
+    tipKey = p.key;
+    tipK.textContent = p.key + ' / 构件';
+    tipL.textContent = p.label;
+    tipD.textContent = p.detail || p.note;
+  }
+  tipEl.classList.add('on');
+  const w = tipEl.offsetWidth || 302;
+  const h = tipEl.offsetHeight || 120;
+  let x = px + 24, y = py + 20;
+  if (x + w > innerWidth - 24) x = px - w - 24;
+  if (y + h > innerHeight - 24) y = py - h - 20;
+  if (x < 16) x = 16;
+  if (y < 16) y = 16;
+  tipEl.style.transform = 'translate(' + Math.round(x) + 'px,' + Math.round(y) + 'px)';
+}
+
+renderer.domElement.addEventListener('click', () => {
+  const k = pick();
+  // 雨境与单件阅读互斥：下雨时点构件，先收雨再聚焦
+  if (k && rainOn) setRain(false);
+  if (!k) { if (S.focus) clearFocus(); return; }   // 点空白处退出聚焦
+  focusOn(k);                                      // 只放大与虚化，构件不位移
+});
+
+// ─────────────────────────── 面板与底栏
+const panelEl = document.getElementById('panel');
+const chipsEl = document.getElementById('chips');
+
+function layerRows(activeKey) {
+  return parts.map(p => `
+    <button class="row ${activeKey === p.key ? 'on' : ''}" data-key="${p.key}">
+      <span class="row-k">${p.key}</span>
+      <span class="row-n">${p.label}</span>
+      <span class="row-a">${p.explodeY ? String(p.explodeY.toFixed(2)) : '基准'}</span>
+    </button>`).join('');
+}
+
+function updatePanel() {
+  const sel = S.selected ? parts.find(p => p.key === S.selected) : null;
+  if (sel) {
+    panelEl.innerHTML = `
+      <div class="p-top">
+        <span class="p-idx">${'〇一二三四五六七'[Number(sel.key.slice(1))]} ／ 七</span>
+        <span class="p-tag">${S.focus ? '单件视图' : (S.exploded.size > 1 ? '分解视图' : '构造索引')}</span>
+      </div>
+      <h2 class="p-title">${sel.label}</h2>
+      <div class="p-en">${sel.en}</div>
+      <div class="p-rule"></div>
+      <p class="p-note">${sel.note}</p>
+      <div class="p-spec">
+        ${(sel.spec || []).map(r => `<div><span>${r[0]}</span><span>${r[1]}</span></div>`).join('')}
+        <div><span>标高</span><span>${sel.bbox.min.y.toFixed(2)} – ${sel.bbox.max.y.toFixed(2)} m</span></div>
+      </div>
+      ${sel.cite ? `<figure class="p-cite"><blockquote>${sel.cite[0]}</blockquote><figcaption>${sel.cite[1]}</figcaption></figure>` : ''}
+      <div class="p-meta">
+        <span>${S.focus ? '已聚焦 · 点击空白处返回' : '点击构件可放大查看'}</span>
+        <span>${sel.key === 'L1' ? '台基固定不浮动' : '分解位移 +' + sel.explodeY.toFixed(2) + ' m'}</span>
+      </div>
+      <div class="p-index">${parts.map(p => `<button data-key="${p.key}" class="${p.key === sel.key ? 'on' : ''}">${'〇一二三四五六七'[Number(p.key.slice(1))]}</button>`).join('')}</div>
+    `;
+  } else {
+    panelEl.innerHTML = `
+      <div class="p-top">
+        <span class="p-idx">总览</span>
+        <span class="p-tag">重檐六角亭</span>
+      </div>
+      <h2 class="p-title">七层构造</h2>
+      <div class="p-rule"></div>
+      <p class="p-note">自下而上：台基、柱网、额枋、斗拱、檐椽、瓦垄、宝顶。悬停任一层可读构造说明；点击该层放大，其余自动虚化，右侧同步显示它的档案，再点一次或点空白处返回。也可用底部「逐层分解」看整座亭子怎样一层层装起来。</p>
+      <figure class="p-cite"><blockquote>${PAVILION_CITE[0]}</blockquote><figcaption>${PAVILION_CITE[1]}</figcaption></figure>
+      <div class="p-list" id="layerList">${layerRows(null)}</div>
+      <div class="p-hint">悬停读说明 · 拖拽旋转 · 滚轮缩放</div>
+    `;
+  }
+  panelEl.querySelectorAll('[data-key]').forEach(el => {
+    el.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const k = el.dataset.key;
+      S.selected = k;
+      updatePanel();
+      updateChips();
+    });
+  });
+  updateChips();
+}
+
+function updateChips() {
+  const i = S.selected ? parts.findIndex(p => p.key === S.selected) : -1;
+  const nEl = document.getElementById('selI');
+  const CN = ['〇', '一', '二', '三', '四', '五', '六', '七'];
+  if (nEl) nEl.textContent = i < 0 ? '〇' : CN[i + 1];
+  chipsEl.querySelectorAll('[data-key]').forEach(el => {
+    el.classList.toggle('on', S.selected === el.dataset.key);
+    el.classList.toggle('up', S.exploded.has(el.dataset.key));
+  });
+}
+
+chipsEl.innerHTML = parts.map(p => `
+  <button class="chip" data-key="${p.key}">
+    <span class="chip-k">${p.key}</span>
+    <span class="chip-n">${p.short}</span>
+  </button>`).join('');
+chipsEl.querySelectorAll('[data-key]').forEach(el => {
+  el.addEventListener('click', () => {
+    const k = el.dataset.key;
+    S.selected = S.selected === k ? null : k;
+    updatePanel();
+    updateChips();
+  });
+});
+
+document.getElementById('btnExplode').addEventListener('click', () => {
+  S.selected = null;
+  explodeAll();
+  updateChips();
+});
+document.getElementById('btnReset').addEventListener('click', () => {
+  resetAll();
+  updateChips();
+});
+
+const sliderEl = document.getElementById('slider');
+sliderEl.addEventListener('input', () => {
+  S.slider = sliderEl.value / 100;
+  applyMaterials();
+  document.body.classList.toggle('is-wire', S.slider < 0.5);
+});
+S.slider = sliderEl.value / 100;
+
+// ─────────────────────────── 机位与键盘
+const VANTAGE = [
+  { cn: '四十五度', en: 'ISOMETRIC',  cfg: { dist: 31.2, ty: 4.42, az: 0.735, el: 0.225 } },
+  { cn: '正面',     en: 'ELEVATION',  cfg: { dist: 25.4, ty: 5.02, az: 0.000, el: 0.090 } },
+  { cn: '俯视',     en: 'PLAN',       cfg: { dist: 29.0, ty: 4.40, az: 0.640, el: 0.930 } },
+  { cn: '檐下',     en: 'UNDER-EAVE', cfg: { dist: 13.4, ty: 5.45, az: 0.660, el: -0.050 } }
+];
+let vantage = 0;
+const viEl = document.getElementById('vi');
+const vcnEl = document.getElementById('vcn');
+
+function setVantage(i, dur = 950) {
+  if (S.focus) { S.focus = null; updateFocus(); }
+  vantage = (i + VANTAGE.length) % VANTAGE.length;
+  const v = VANTAGE[vantage];
+  const cfg = { ...v.cfg };
+  if (S.exploded.size > 1) { cfg.ty += 4.2; cfg.dist *= 1.52; }
+  tweenCamera(cfg, dur);
+  if (viEl) viEl.textContent = String(vantage + 1).padStart(2, '0');
+  if (vcnEl) vcnEl.textContent = v.cn;
+  document.querySelectorAll('#vseg button').forEach((b, k) => b.classList.toggle('on', k === vantage));
+}
+document.querySelectorAll('#vseg button').forEach(b => {
+  b.addEventListener('click', () => setVantage(Number(b.dataset.v)));
+});
+
+function focusLayer(key) {
+  focusOn(key);
+}
+
+function stepLayer(d) {
+  const cur = S.selected ? parts.findIndex(p => p.key === S.selected) : -1;
+  const next = (cur + d + parts.length * 2) % parts.length;
+  focusLayer(parts[next].key);
+}
+
+function toggleWire() {
+  const toWire = S.slider > 0.5;
+  S.slider = toWire ? 0.04 : 1;
+  sliderEl.value = Math.round(S.slider * 100);
+  applyMaterials();
+  document.body.classList.toggle('is-wire', S.slider < 0.5);
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (S.focus) { clearFocus(); } else { resetAll(); updateChips(); }
+    return;
+  }
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'arrowleft') { setVantage(vantage - 1); e.preventDefault(); }
+  else if (k === 'arrowright') { setVantage(vantage + 1); e.preventDefault(); }
+  else if (k === 'arrowup') { stepLayer(-1); e.preventDefault(); }
+  else if (k === 'arrowdown') { stepLayer(1); e.preventDefault(); }
+  else if (k === 'e') { S.selected = null; explodeAll(); updateChips(); }
+  else if (k === 'r') { resetAll(); updateChips(); }
+  else if (k === 'w') { toggleWire(); }
+  else if (k === 'q') { setRain(!rainOn); }
+  else if (/^[1-7]$/.test(e.key)) { focusLayer('L' + e.key); }
+});
+
+
+// ─────────────────────────── 雨境：水怎样被送走
+const RAIN_N = 1500;
+const rainPos = new Float32Array(RAIN_N * 6);
+const rainGeo = new THREE.BufferGeometry();
+rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
+const rainMat = new THREE.LineBasicMaterial({
+  color: 0x5d6f7d, transparent: true, opacity: 0.42, depthWrite: false
+});
+const rainLines = new THREE.LineSegments(rainGeo, rainMat);
+rainLines.frustumCulled = false;
+scene.add(rainLines);
+
+// 顺坡流下的小水流：让"瓦垄导流"看得见
+const RUN_N = 96;
+const runPos = new Float32Array(RUN_N * 6);
+const runGeo = new THREE.BufferGeometry();
+runGeo.setAttribute('position', new THREE.BufferAttribute(runPos, 3));
+const runMat = new THREE.LineBasicMaterial({ color: 0x7d8b96, transparent: true, opacity: 0, depthWrite: false });
+const runLines = new THREE.LineSegments(runGeo, runMat);
+runLines.frustumCulled = false;
+runLines.visible = false;
+scene.add(runLines);
+
+const runs = [];
+const newRun = () => {
+  const upper = Math.random() < 0.32;
+  return { a: Math.random() * Math.PI * 2, upper,
+           r: upper ? 0.42 + Math.random() * 1.8 : 1.70 + Math.random() * 2.0,
+           v: 1.5 + Math.random() * 1.2 };
+};
+for (let i = 0; i < RUN_N; i++) runs.push(newRun());
+
+function stepRunoff(dt) {
+  let o = 0;
+  for (const d of runs) {
+    d.r += d.v * dt;
+    const rMax = d.upper ? 2.33 : 3.85;
+    const rMin = d.upper ? 0.34 : 1.68;
+    if (d.r > rMax) { Object.assign(d, newRun()); d.r = rMin + Math.random() * 0.24; }
+    const r0 = Math.max(rMin, d.r - 0.17);
+    const y1 = (roofYAt(d.r) ?? 0) + 0.035;
+    const y0 = (roofYAt(r0) ?? 0) + 0.035;
+    const cx = Math.cos(d.a), cz = Math.sin(d.a);
+    runPos[o++] = cx * d.r; runPos[o++] = y1; runPos[o++] = cz * d.r;
+    runPos[o++] = cx * r0;  runPos[o++] = y0; runPos[o++] = cz * r0;
+  }
+  runGeo.attributes.position.needsUpdate = true;
+}
+
+// 檐口滴水帘：水从檐口挂下来，一眼看出"檐把水送出柱根之外"
+const CUR_N = 150;
+const curPos = new Float32Array(CUR_N * 6);
+const curGeo = new THREE.BufferGeometry();
+curGeo.setAttribute('position', new THREE.BufferAttribute(curPos, 3));
+const curMat = new THREE.LineBasicMaterial({ color: 0x4e6270, transparent: true, opacity: 0, depthWrite: false });
+const curLines = new THREE.LineSegments(curGeo, curMat);
+curLines.frustumCulled = false;
+curLines.visible = false;
+scene.add(curLines);
+const curAng = [];
+for (let i = 0; i < CUR_N; i++) curAng.push((i / CUR_N) * Math.PI * 2 + Math.random() * 0.03);
+let curOff = 0;
+
+function stepCurtain(dt) {
+  curOff -= dt * 2.2;
+  let o = 0;
+  for (let i = 0; i < CUR_N; i++) {
+    const a = curAng[i];
+    const per = Math.PI / 3;
+    const rel = ((a % per) + per) % per;
+    const nearCorner = Math.min(rel, per - rel) < 0.10;
+    const r = nearCorner ? 4.30 : 3.99 + Math.random() * 0.05;
+    const top = nearCorner ? 5.44 : 5.10;
+    const span = nearCorner ? 1.15 : 0.98;
+    const y = top - (((curOff + i * 0.37) % span) + span) % span;
+    const cx = Math.cos(a), cz = Math.sin(a);
+    curPos[o++] = cx * r; curPos[o++] = y;        curPos[o++] = cz * r;
+    curPos[o++] = cx * r; curPos[o++] = y + 0.26; curPos[o++] = cz * r;
+  }
+  curGeo.attributes.position.needsUpdate = true;
+}
+
+const drops = [];
+const newDrop = (top) => {
+  const a = Math.random() * Math.PI * 2;
+  const r = Math.sqrt(Math.random()) * 8.8;
+  return { x: Math.cos(a) * r, z: Math.sin(a) * r,
+           y: top ? 11 + Math.random() * 4.5 : Math.random() * 15,
+           v: 7.6 + Math.random() * 3.2, len: 0.15 + Math.random() * 0.20 };
+};
+for (let i = 0; i < RAIN_N; i++) drops.push(newDrop(false));
+
+let rainOn = false;
+let rainAmt = 0;
+let rainLabelsDirty = true;
+
+function stepRain(dt) {
+  let o = 0;
+  for (const d of drops) {
+    d.y -= d.v * dt;
+    const r = Math.hypot(d.x, d.z);
+    if (r < 3.95) {
+      const ry = roofYAt(r);
+      if (ry != null && d.y < ry + 0.03) {
+        // 打在屋面上：沿坡滑到檐口，从檐外落下
+        const a = Math.atan2(d.z, d.x);
+        const isUpper = r < 2.36;
+        const per = Math.PI / 3;
+        const rel = ((a % per) + per) % per;
+        // 靠近转角（翼角起翘）时，水被抛得更远、更高
+        const nearCorner = Math.min(rel, per - rel) < 0.12;
+        const er = isUpper ? (nearCorner ? 2.62 : 2.46) : (nearCorner ? 4.34 : 3.98);
+        const ey = isUpper ? 8.24 : (nearCorner ? 5.46 : 5.10);
+        d.x = Math.cos(a) * er;
+        d.z = Math.sin(a) * er;
+        d.y = ey;
+      }
+    }
+    if (d.y < -0.04) {
+      Object.assign(d, newDrop(true));
+      o += 6;
+      continue;
+    }
+    rainPos[o++] = d.x; rainPos[o++] = d.y; rainPos[o++] = d.z;
+    rainPos[o++] = d.x; rainPos[o++] = d.y + d.len; rainPos[o++] = d.z;
+  }
+  rainGeo.attributes.position.needsUpdate = true;
+}
+
+const rlabelsEl = document.getElementById('rlabels');
+const rleadersEl = document.getElementById('rleaders');
+const RAIN_NOTES = [
+  { t: '檐口', s: '挑檐 1.5 m，滴水落在柱根之外' },
+  { t: '瓦垄', s: '垄沟顺坡，把水汇向檐口' },
+  { t: '台明', s: '抬高 0.62 m，柱脚不浸水' }
+];
+rlabelsEl.innerHTML = RAIN_NOTES.map((n, i) => `
+  <div class="rl"><span class="rl-k">${'一二三'[i]}</span>
+    <span class="rl-t">${n.t}</span><span class="rl-s">${n.s}</span></div>`).join('');
+const rlNodes = [...rlabelsEl.querySelectorAll('.rl')];
+
+function updateRainLabels() {
+  rleadersEl.innerHTML = '';
+  if (!rainOn) return;
+  const cx = camera.position.x - controls.target.x, cz = camera.position.z - controls.target.z;
+
+  // 三组候选点：只取朝向镜头的一侧，再按屏幕位置取极值——
+  // 锚点因此跟着视角在屋面上移动，标注不会"钉死"。
+  const pick = (build, score, n = 40) => {
+    const cand = [];
+    for (let i = 0; i < n; i++) {
+      const a = i / n * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
+      if (c * cx + s * cz <= 0.02) continue;
+      const p = build(c, s);
+      cand.push({ ...projectPoint(p[0], p[1], p[2]) });
+    }
+    if (!cand.length) return null;
+    return cand.reduce((b, q) => (score(q) > score(b) ? q : b), cand[0]);
+  };
+
+  // 取"朝向镜头一侧、按屏幕 x 排序后的中间点"——落在瓦面上，不落檐角
+  const pickMedian = (build, n = 40) => {
+    const cand = [];
+    for (let i = 0; i < n; i++) {
+      const a = i / n * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
+      if (c * cx + s * cz <= 0.02) continue;
+      const p = build(c, s);
+      cand.push({ ...projectPoint(p[0], p[1], p[2]) });
+    }
+    if (!cand.length) return null;
+    cand.sort((a, b) => a.x - b.x);
+    return cand[Math.floor(cand.length * 0.35)];
+  };
+
+  const A = [
+    pick((c, s) => [c * 3.88, 5.15, s * 3.88], q => -q.x),
+    pickMedian((c, s) => [c * 2.78, (roofYAt(2.78) || 5.6) + 0.06, s * 2.78]),
+    pick((c, s) => [c * 3.04, 0.66, s * 3.04], q => -Math.abs(q.x - innerWidth * 0.42) - Math.abs(q.y - innerHeight * 0.70) * 0.5)
+  ].filter(Boolean);
+
+  if (!A.length) return;
+  A.sort((a, b) => a.y - b.y);
+  const GAP = 74, minY = 236, maxY = innerHeight - 232;
+  const ly = A.map(p => Math.min(maxY, Math.max(minY, p.y)));
+  for (let i = 1; i < ly.length; i++) if (ly[i] < ly[i - 1] + GAP) ly[i] = ly[i - 1] + GAP;
+  for (let i = ly.length - 1; i >= 0; i--) {
+    const lim = i === ly.length - 1 ? maxY : ly[i + 1] - GAP;
+    if (ly[i] > lim) ly[i] = lim;
+  }
+  const colX = Math.max(160, Math.min(336, innerWidth * 0.22));
+  let paths = '';
+  A.forEach((p, i) => {
+    const node = rlNodes[i];
+    if (!node) return;
+    node.style.transform = `translate(${colX}px, ${ly[i]}px) translate(-100%, -50%)`;
+    node.style.opacity = 1;
+    paths += `<path d="M${colX + 9} ${ly[i]}H${colX + 36}L${p.x - 9} ${p.y}" />`;
+    paths += `<circle cx="${p.x - 9}" cy="${p.y}" r="2.2" class="dot" />`;
+  });
+  rlNodes.forEach((n, i) => { if (i >= A.length) n.style.opacity = 0; });
+  rleadersEl.innerHTML = paths;
+}
+function renderRainPanel() {
+  panelEl.innerHTML = `
+    <div class="p-top">
+      <span class="p-idx">雨境</span>
+      <span class="p-tag">降雨演示</span>
+    </div>
+    <h2 class="p-title">水怎样被送走</h2>
+    <div class="p-en">RAIN · HOW WATER LEAVES THE ROOF</div>
+    <div class="p-rule"></div>
+    <p class="p-note">雨落在瓦面上，顺垄沟淌到檐口；挑出的屋檐把水送出柱根之外，翼角起翘，角上的水抛得最远；台明把整座木构抬离地面，柱脚始终不浸水。</p>
+    <div class="p-spec">
+      <div><span>檐口挑出</span><span>1.50 m</span></div>
+      <div><span>台明抬高</span><span>0.62 m</span></div>
+      <div><span>檐口标高</span><span>5.12 m</span></div>
+      <div><span>翼角抛距</span><span>4.34 m</span></div>
+    </div>
+    <div class="p-meta">
+      <span>再按 Q 或点「雨境」收雨</span>
+      <span>雨滴 1500 · 水路 96</span>
+    </div>
+  `;
+}
+
+let rainPrevLabelsOn = null;
+function setRain(on) {
+  if (on === rainOn) return;
+  rainOn = on;
+  rainLines.visible = on;
+  document.body.classList.toggle('is-rain', on);
+  const b = document.getElementById('btnRain');
+  if (b) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+  rlabelsEl.classList.toggle('on', on);
+
+  if (on) {
+    // 雨境与聚焦 / 层级标注互斥：进来先解除，出去再还原
+    if (S.focus) { S.focus = null; document.body.classList.remove('is-focus'); applyMaterials(); }
+    S.selected = null;
+    rainPrevLabelsOn = S.labelsOn;
+    S.labelsOn = false;
+    updateLabels();
+    updateChips();
+    rainLabelsDirty = true;
+    stepRain(0.016);
+    updateRainLabels();
+    renderRainPanel();
+  } else {
+    if (rainPrevLabelsOn !== null) { S.labelsOn = rainPrevLabelsOn; rainPrevLabelsOn = null; }
+    rlabelsEl.classList.remove('on');
+    rleadersEl.innerHTML = '';
+    updateLabels();
+    updateChips();
+    updatePanel();
+  }
+}
+
+document.getElementById('btnRain').addEventListener('click', () => setRain(!rainOn));
+
+// ─────────────────────────── 层级标注
+const labelsEl = document.getElementById('labels');
+const svgEl = document.getElementById('leaders');
+labelsEl.innerHTML = parts.map(p => `
+  <div class="lbl" data-key="${p.key}">
+    <span class="lbl-k">${p.key}</span><span class="lbl-n">${p.label}</span>
+  </div>`).join('');
+const labelNodes = [...labelsEl.querySelectorAll('.lbl')].map(el => ({
+  el, key: el.dataset.key,
+  node: parts.find(p => p.key === el.dataset.key)
+}));
+
+const v3 = new THREE.Vector3();
+
+function projectPoint(x, y, z) {
+  v3.set(x, y, z).project(camera);
+  return { x: (v3.x + 1) / 2 * innerWidth, y: (1 - v3.y) / 2 * innerHeight, z: v3.z };
+}
+
+function updateLabels() {
+  const on = !S.focus && !rainOn && S.labelsOn && S.exploded.size >= 2;
+  labelsEl.classList.toggle('on', on);
+  svgEl.style.opacity = on ? 1 : 0;
+  if (!on) return;
+
+  const anchors = [];
+  for (const ln of labelNodes) {
+    const p = ln.node;
+    const off = S.offsets.get(p.key) || 0;
+    const b = p.bbox;
+    let minX = 1e9, sumY = 0, cnt = 0;
+    for (const ix of [b.min.x, b.max.x]) for (const iy of [b.min.y, b.max.y]) for (const iz of [b.min.z, b.max.z]) {
+      const s2 = projectPoint(ix, iy + off, iz);
+      minX = Math.min(minX, s2.x); sumY += s2.y; cnt++;
+    }
+    anchors.push({ key: p.key, ax: minX, ay: sumY / cnt, node: ln, ly: sumY / cnt });
+  }
+  anchors.sort((a, b) => a.ay - b.ay);
+  const GAP = 30, minY = 118, maxY = innerHeight - 210;
+  for (let i = 0; i < anchors.length; i++) {
+    let y = Math.min(maxY, Math.max(minY, anchors[i].ay));
+    if (i > 0 && y < anchors[i - 1].ly + GAP) y = anchors[i - 1].ly + GAP;
+    anchors[i].ly = y;
+  }
+  for (let i = anchors.length - 1; i >= 0; i--) {
+    const lim = i === anchors.length - 1 ? maxY : anchors[i + 1].ly - GAP;
+    if (anchors[i].ly > lim) anchors[i].ly = lim;
+  }
+  const colX = Math.max(120, Math.min(...anchors.map(a => a.ax)) - 54);
+  let paths = '';
+  for (const a of anchors) {
+    a.node.el.style.transform = `translate(${colX}px, ${a.ly}px) translate(-100%, -50%)`;
+    a.node.el.style.opacity = 1;
+    const xm = Math.max(colX + 30, a.ax - 78);
+    paths += `<path d="M${colX + 11} ${a.ly}H${xm}L${a.ax - 10} ${a.ay}" />`;
+    paths += `<circle cx="${a.ax - 10}" cy="${a.ay}" r="2.1" class="dot" />`;
+  }
+  svgEl.innerHTML = paths;
+}
+
+// ─────────────────────────── 渲染循环
+let lastT = performance.now();
+let rafId = 0;
+let running = true;
+function animate(now) {
+  if (!running) return;
+  rafId = requestAnimationFrame(animate);
+  const dt = Math.min(0.05, (now - lastT) / 1000);
+  lastT = now;
+
+  // 位移缓动
+  for (const p of parts) {
+    const cur = S.offsets.get(p.key);
+    const tgt = S.targets.get(p.key);
+    const k = 1 - Math.exp(-dt * 9.5);
+    const nv = cur + (tgt - cur) * k;
+    S.offsets.set(p.key, Math.abs(tgt - nv) < 0.002 ? tgt : nv);
+    p.group.position.y = S.offsets.get(p.key);
+  }
+
+  // 空闲自动环绕：只在鼠标离开画布后累计，停在画布上阅读时不会自转
+  if (!overCanvas) {
+    idleT += dt;
+    if (!STATIC && idleT > 9 && !camTween) controls.autoRotate = true;
+  }
+
+  // 相机补间
+  if (camTween) {
+    camTween.t += dt * 1000;
+    const u = Math.min(1, camTween.t / camTween.dur);
+    const e = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
+    camera.position.lerpVectors(camTween.from.p, camTween.to.p, e);
+    controls.target.lerpVectors(camTween.from.t, camTween.to.t, e);
+    if (u >= 1) camTween = null;
+  }
+
+  // 雨
+  rainAmt += ((rainOn ? 1 : 0) - rainAmt) * (1 - Math.exp(-dt * 3.4));
+  if (rainAmt > 0.002) {
+    rainLines.visible = true;
+    rainMat.opacity = 0.42 * rainAmt;
+    runLines.visible = true;
+    runMat.opacity = 0.62 * rainAmt;
+    curLines.visible = true;
+    curMat.opacity = 0.5 * rainAmt;
+    stepCurtain(dt);
+    stepRain(dt);
+    stepRunoff(dt);
+    if (camTween) rainLabelsDirty = true;
+    if (rainLabelsDirty) { rainLabelsDirty = false; updateRainLabels(); }
+  } else if (!rainOn) {
+    rainLines.visible = false;
+    runLines.visible = false;
+    curLines.visible = false;
+    rleadersEl.innerHTML = '';
+  }
+
+  // 悬停：只在指针移动后算一次，静止时不 raycast、不强制 reflow
+  if (hoverDirty) {
+    hoverDirty = false;
+    const k = pointerOverUI ? null : pick();
+    if (k !== S.hover) {
+      S.hover = k;
+      renderer.domElement.style.cursor = k ? 'pointer' : 'default';
+      applyMaterials();
+    }
+    updateTip();
+  }
+
+  controls.update();
+  updateLabels();
+  renderer.render(scene, camera);
+}
+
+function onResize() {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight, false);
+}
+addEventListener('resize', onResize);
+
+// ─────────────────────────── 初始状态
+function applyInitState() {
+  if (STATE === 'full' || STATE === 'wire') {
+    placeCamera(BASE);
+  } else if (STATE === 'explode') {
+    for (const p of parts) {
+      S.exploded.add(p.key);
+      S.offsets.set(p.key, p.explodeY);
+      S.targets.set(p.key, p.explodeY);
+      p.group.position.y = p.explodeY;
+    }
+    S.labelsOn = true;
+    document.body.classList.add('is-exploded');
+    S.selected = 'L5';
+    placeCamera(FIT);
+  }
+  const fk = qs.get('focus');
+  if (fk && parts.some(p => p.key === fk)) { placeCamera(BASE); focusOn(fk); }
+  if (STATE === 'wire') {
+    S.slider = 0.04;
+    sliderEl.value = 4;
+    document.body.classList.add('is-wire');
+  }
+  applyMaterials();
+  updatePanel();
+  updateChips();
+}
+
+applyInitState();
+
+// 静态截图用：?v=N 直接切到第 N 个机位
+if (STATIC) {
+  const vq = qs.get('v');
+  if (vq !== null && !Number.isNaN(Number(vq))) {
+    const i = Math.max(0, Math.min(VANTAGE.length - 1, Number(vq)));
+    placeCamera(VANTAGE[i].cfg);
+    vantage = i;
+    if (viEl) viEl.textContent = String(i + 1).padStart(2, '0');
+    if (vcnEl) vcnEl.textContent = VANTAGE[i].cn;
+    document.querySelectorAll('#vseg button').forEach((b, k) => b.classList.toggle('on', k === i));
+  }
+}
+if (qs.has('rain')) setRain(true);
+rafId = requestAnimationFrame(animate);
+
+// 隐藏加载层
+requestAnimationFrame(() => {
+  document.body.classList.add('is-ready');
+  window.__DSH_READY = true;
+  document.title = '古建新生 · READY';
+  const boot = document.querySelector('.boot');
+  if (boot) setTimeout(() => { boot.style.display = 'none'; }, 760);
+});
+
+// ─────────────────────────── 资源释放
+// 若将来加入"重建建筑"的路径，请在重建前对旧 group 调用 disposeGroup()，
+// 否则旧的几何体与材质会留在 GPU 中（disposeAll 里就是这么用的）。
+function disposeGroup(group) {
+  group.traverse((obj) => {
+    if (obj.geometry) obj.geometry.dispose();
+    const mats = Array.isArray(obj.material) ? obj.material : (obj.material ? [obj.material] : []);
+    for (const m of mats) {
+      for (const k in m) {
+        const v = m[k];
+        if (v && v.isTexture) v.dispose();
+      }
+      m.dispose();
+    }
+  });
+}
+
+let disposed = false;
+function disposeAll() {
+  if (disposed) return;
+  disposed = true;
+  running = false;
+  if (rafId) cancelAnimationFrame(rafId);
+  clearSeq();
+  controls.dispose();
+  disposeGroup(scene);
+  renderer.dispose();
+  renderer.forceContextLoss();
+  scene.clear();
+  parts.length = 0;
+  partMeshes.length = 0;
+  S.offsets.clear();
+  S.targets.clear();
+  S.exploded.clear();
+  S.selected = null;
+  S.hover = null;
+}
+addEventListener('pagehide', disposeAll);
+addEventListener('beforeunload', disposeAll);
+
+// 仅在 ?debug=1 时暴露调试对象
+if (qs.has('debug')) {
+  window.__APP = { S, parts, scene, camera, controls, applyMaterials, updatePanel, explodeAll, resetAll, disposeAll };
+  window.__DBG = { parts, S, camera, renderer, scene, applyMaterials, explodeAll, resetAll, disposeAll };
+}
+
+</script>
+</body>
+</html>
